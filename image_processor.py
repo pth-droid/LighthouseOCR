@@ -1,0 +1,150 @@
+import cv2
+import numpy as np
+from PIL import Image, ExifTags
+
+MAX_LONG_SIDE = 2000
+
+def apply_exif_rotation(image: Image.Image) -> Image.Image:
+    try:
+        exif = image._getexif()
+        if exif is None:
+            return image
+        orient_key = next((k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None)
+        if orient_key is None:
+            return image
+        orientation = exif.get(orient_key)
+        rotation_map = {3: 180, 6: 270, 8: 90}
+        degrees = rotation_map.get(orientation)
+        if degrees:
+            image = image.rotate(degrees, expand=True)
+        return image
+    except Exception:
+        return image
+
+def order_points(pts):
+    """Sorts points into: top-left, top-right, bottom-right, bottom-left"""
+    rect = np.zeros((4, 2), dtype="float32")
+    
+    # the top-left point will have the smallest sum, whereas
+    # the bottom-right point will have the largest sum
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    
+    # now, compute the difference between the points, the
+    # top-right point will have the smallest difference,
+    # whereas the bottom-left will have the largest difference
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    
+    return rect
+
+def perspective_transform(image, pts):
+    """Warps the image to a top-down view based on the 4 provided points"""
+    rect = order_points(pts)
+    (tl, tr, br, bl) = rect
+    
+    # Compute widths
+    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+    maxWidth = max(int(widthA), int(widthB))
+    
+    # Compute heights
+    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+    maxHeight = max(int(heightA), int(heightB))
+    
+    # Destination points for top-down view
+    dst = np.array([
+        [0, 0],
+        [maxWidth - 1, 0],
+        [maxWidth - 1, maxHeight - 1],
+        [0, maxHeight - 1]], dtype="float32")
+    
+    # Perspective transform matrix
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
+    return warped
+
+def get_document_contour(image_cv):
+    """Detects the document contour using OpenCV edge detection"""
+    # Resize for faster and more reliable edge detection while keeping aspect ratio
+    ratio = image_cv.shape[0] / 500.0
+    image = cv2.resize(image_cv, (int(image_cv.shape[1] / ratio), 500))
+    
+    # Convert to grayscale, blur, edge detection
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    # Using adaptive Canny based on median pixel intensity
+    v = np.median(gray)
+    lower = int(max(0, (1.0 - 0.33) * v))
+    upper = int(min(255, (1.0 + 0.33) * v))
+    edged = cv2.Canny(gray, lower, upper)
+    
+    # Morphological transformations to close gaps in edges
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    edged = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
+    
+    # Find contours
+    contours, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
+    
+    document_contour = None
+    for c in contours:
+        # Approximate the contour
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        
+        # If the approximated contour has 4 points and covers a reasonably large area, assume it's a document
+        if len(approx) == 4 and cv2.contourArea(approx) > 10000:
+            document_contour = approx
+            break
+            
+    if document_contour is not None:
+        # Scale the contour back to the original image size
+        return document_contour.reshape(4, 2) * ratio
+    return None
+
+def resize_if_needed(img: Image.Image) -> Image.Image:
+    w, h = img.size
+    long_side = max(w, h)
+    if long_side <= MAX_LONG_SIDE:
+        return img
+    scale = MAX_LONG_SIDE / long_side
+    resample_method = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+    return img.resize((int(w * scale), int(h * scale)), resample_method)
+
+def prepare_image(image_path: str) -> Image.Image:
+    try:
+        # Step 1: Open and orient image via PIL
+        with Image.open(image_path) as img:
+            img = apply_exif_rotation(img)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.load()
+            pil_img = img.copy()
+            
+        # Step 2: Convert to OpenCV format (BGR numpy array)
+        cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        
+        # Step 3: Document Edge Detection & Perspective Transform
+        doc_contour = get_document_contour(cv_img)
+        
+        if doc_contour is not None:
+            # Document found, flatten/unwarp it
+            warped_cv = perspective_transform(cv_img, doc_contour)
+            
+            # Convert back to PIL Image (RGB)
+            warped_rgb = cv2.cvtColor(warped_cv, cv2.COLOR_BGR2RGB)
+            final_img = Image.fromarray(warped_rgb)
+        else:
+            # Fallback to original if no 4-corner document is detected
+            final_img = pil_img
+            
+        # Step 4: Final resize to prevent memory/API overload
+        return resize_if_needed(final_img)
+        
+    except Exception as e:
+        raise RuntimeError(f"Lỗi tiền xử lý hình ảnh. File có thể bị hỏng: {e}") from e

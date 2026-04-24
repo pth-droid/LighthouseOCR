@@ -1,0 +1,60 @@
+===========================================================================
+                HUONG DAN SU DUNG LIGHTHOUSE OCR (v6.3)
+===========================================================================
+
+Tai lieu huong dan nhanh cac tinh nang cot loi danh cho Ke toan.
+
+1. QUY TRINH QUET HOA DON (OCR)
+---------------------------------------------------------------------------
+- Buoc 1: Nhấn "Browse" de chon thu muc chua anh hoa don.
+- Buoc 2: Nhan "Chay Scan". He thong se tu dong: Lam phang anh -> Doc chu
+          -> Anh xa vat tu -> Tinh toan tai chinh.
+- Buoc 3: Sau khi quet xong, bang "Ra soat du lieu" se tu dong hien ra.
+
+
+2. GIAO DIEN RA SOAT & CHINH SUA (POST-PROCESS)
+---------------------------------------------------------------------------
+Day la buoc quan trong de kiem tra du lieu truoc khi xuat file chinh thuc.
+
+- CHINH SUA THONG MINH:
+  + Ngay thang: Go tat "ddmm" (VD: 2304 -> 23/04/2026).
+  + Vat tu: Go ten hoac ma vao o tuong ung, he thong se tu tra cuu
+            Master List de dien thong tin con lai.
+  + NCC: Nhap Ten NCC, he thong tu chuyen thanh Ma NCC chuan.
+
+- CHUYEN SANG CHI PHI: 
+  + Tick chon cac dong khong phai hang hoa kho -> Nhan nut mui ten 
+    "Chuyen sang Chi phi".
+
+- XU LY HANG LONG (ALIAS): Neu thay ten hang la hoac DVT la:
+  1. Chinh sua dong do cho dung (chon ten chuan tu Master List).
+  2. Click CHUOT PHAI vao dong do -> Chon "Luu vao Tu dien".
+  3. Nhap he so quy doi (neu can) -> Nhan Luu.
+
+
+3. QUAN LY TU DIEN TIENG LONG (ALIAS DICTIONARY)
+---------------------------------------------------------------------------
+Dung de "huan luyen" he thong nhan dien cac cach goi ten khac nhau.
+
+- Truy cap: Nhan nut "Tu dien Tieng long" (bieu tuong cuon sach) 
+            tai man hinh chinh.
+- Cach dung:
+  + Ten vat tu: Su dung o tim kiem co goi y (Autocomplete) de chon
+                dung vat tu trong Master List.
+  + Quy doi don vi: 
+    * Nhap "DVT long" (ten don vi tren hoa don).
+    * Nhap "He so long": Quy tac "1 Don vi long = Bao nhieu don vi kho".
+      VD: Hoa don ban "Thung 24 lon", kho quan ly theo "Lon" -> He so la 24.
+- Luu thay doi: Nhan "Luu thay doi" de ap dung ngay cho cac lan quet sau.
+
+
+4. CAU HINH & DU LIEU MASTER
+---------------------------------------------------------------------------
+- Nap lai Master List: Neu ban moi cap nhat file Excel danh muc vat tu, 
+  hay nhan "Nap lai Master List" de he thong cap nhat du lieu moi nhat.
+- Luu y: Luon dong cac file Excel ket qua trong thu muc DONE truoc khi 
+  thuc hien luot quet moi de tranh loi ghi file.
+
+===========================================================================
+Lighthouse OCR Team - Production Ready v6.3
+===========================================================================

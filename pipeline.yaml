@@ -1,0 +1,40 @@
+description: "Lighthouse OCR Data Processing Pipeline"
+version: "1.0"
+
+logic:
+  preprocessing:
+    tool: "OpenCV + Pillow"
+    actions:
+      - "Auto-orient images using EXIF metadata."
+      - "Detect document contours using Canny & Morphological edge detection."
+      - "Execute 4-point Perspective Transform (Perspective Warp) to flatten the document into a top-down view."
+      - "Resize to 2000px long edge (after crop) to improve OCR accuracy on handwritten and blurry invoices."
+  
+  ocr_extraction:
+    router: "Local PaddleOCR Sandbox (portable python_env, PP-OCRv5 target with legacy fallback)"
+    path_a:
+      condition: "Text confidence > 90%"
+      engine: "Configurable Light Model (default: Gemini 3.1 Flash-Lite; set via lighthouse_config.json)"
+      action: "Receive raw text from PaddleOCR (processed image) and inject master dictionaries. Structure into JSON including department extraction."
+    path_b:
+      condition: "Text confidence < 90% or empty (Handwritten/Muffled)"
+      engine: "Configurable Pro Model (default: Gemini 3.1 Flash Vision; set via lighthouse_config.json)"
+      action: "Receive warped top-down image + master dictionaries. Execute vision-based extraction including department extraction."
+  
+  data_calculation:
+    engine: "Configurable Light Model (default: Gemini 3.1 Flash-Lite; set via lighthouse_config.json)"
+    action: "Inference of missing Suppliers based on item context from Master List. Automatic detection of VAT-inclusive line totals to prevent double-counting. Calculation of VAT, discounts, and adjusted accounting unit price per item, while preserving original invoice price in base fields and writing a standardized pricing formula into notes. Preserves 'department' field from OCR output."
+  
+  data_mapping:
+    engine: "Hybrid: Local Fuzzy (rapidfuzz) + Configurable Light Model"
+    action: 
+      - "Pre-cleaning: Strips English parenthetical noise and trailing Latin text from OCR output while preserving pure English names."
+      - "Normalization: De-accents and strips noise for high-confidence local fuzzy matching."
+      - "Short-Name Guard: Local fuzzy matching requires score >= 88 for items with <= 2 words to prevent false positives (e.g. 'Bơ')."
+      - "5-Tier Reasoning Chain: LLM mapping uses prioritized context: (1) Department, (2) Supplier Identity, (3) Supplier Sample Products, (4) Cross-Item Context (entire invoice list), and (5) Price Comparison against Master List reference prices."
+      - "Unit Conversion: Automatically converts invoice units (Dvt0) to warehouse base units (Dvt) using conversion factors (He_So0) from the Master List."
+      - "Smart Routing: High-confidence matches go to PNMH; unmapped items with known suppliers are routed to the Expense template; risky/ambiguous items stay in PNMH with yellow highlighting."
+  
+  export:
+    tool: "openpyxl"
+    action: "Duplicate master Excel template. Append parsed rows. Add conditional color highlighting for OCR math errors or low safety. Only successful images are moved into DONE."
