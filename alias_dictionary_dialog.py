@@ -4,12 +4,12 @@ import logging
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QLineEdit, QHeaderView, QAbstractItemView, QMessageBox,
-    QComboBox, QStyledItemDelegate
+    QComboBox, QStyledItemDelegate, QCompleter
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 
-# ── Delegate cho Dropdown (Tái sử dụng logic từ post_process) ──
+# ── Delegate cho Dropdown (Theo logic chuẩn từ post_process_dialog) ──
 class ComboBoxDelegate(QStyledItemDelegate):
     def __init__(self, options, parent=None):
         super().__init__(parent)
@@ -17,30 +17,42 @@ class ComboBoxDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
+        actual_opts = self.options(index) if callable(self.options) else self.options
+        editor.addItems(actual_opts)
         editor.setEditable(True)
         editor.setInsertPolicy(QComboBox.NoInsert)
         
-        actual_opts = self.options(index) if callable(self.options) else self.options
-        editor.addItems(actual_opts)
-        
-        # Bật auto-completion cho combobox
-        from PyQt5.QtWidgets import QCompleter
+        # Thiết lập QCompleter để hỗ trợ gợi ý (Popup mode)
         completer = QCompleter(actual_opts, editor)
         completer.setCaseSensitivity(Qt.CaseInsensitive)
         completer.setFilterMode(Qt.MatchContains)
+        completer.setCompletionMode(QCompleter.PopupCompletion) # Chỉ hiện popup, không điền inline
         editor.setCompleter(completer)
         
-        # [Excel-style] Tự động chọn toàn bộ text để gõ mới là ghi đè
-        editor.lineEdit().selectAll()
+        editor.setStyleSheet("""
+            QComboBox { background:#0A2740; color:#BDD8E9; border:1px solid #49769F; padding:2px; }
+            QComboBox QAbstractItemView { background:#0A2740; color:#BDD8E9; selection-background-color:#0A4174; }
+        """)
         
         return editor
 
     def setEditorData(self, editor, index):
-        val = index.data(Qt.EditRole) or index.data(Qt.DisplayRole)
-        editor.setCurrentText(str(val))
+        value = index.model().data(index, Qt.EditRole)
+        text = str(value) if value is not None else ""
+        editor.setCurrentText(text)
+        
+        # [Excel-style] Tự động chọn toàn bộ text để khi gõ phím đầu tiên sẽ ghi đè
+        line_edit = editor.lineEdit()
+        if line_edit:
+            line_edit.selectAll()
 
     def setModelData(self, editor, model, index):
-        model.setData(index, editor.currentText(), Qt.EditRole)
+        value = editor.currentText()
+        # Tự động viết hoa nếu là cột Mã (0), ĐVT Kho (3)
+        col = index.column()
+        if col in (0, 3):
+            value = value.upper()
+        model.setData(index, value, Qt.EditRole)
 
 class AliasDictionaryDialog(QDialog):
     def __init__(self, data_manager, parent=None):
@@ -91,7 +103,7 @@ class AliasDictionaryDialog(QDialog):
         self.table.setItemDelegateForColumn(2, ComboBoxDelegate(name_list, self.table))
         self.table.setItemDelegateForColumn(3, ComboBoxDelegate(unit_list, self.table))
         
-        # layout.addWidget(self.table) # Dòng này đã có ở trên
+        self.table.cellChanged.connect(self._on_cell_changed)
         layout.addWidget(self.table)
 
         # --- Footer Actions ---
@@ -201,6 +213,55 @@ class AliasDictionaryDialog(QDialog):
         except Exception as e:
             self.table.blockSignals(False)
             QMessageBox.critical(self, "Lỗi", f"Không thể lưu file:\n{e}")
+
+    def _on_cell_changed(self, row, col):
+        if not self.data_manager:
+            return
+
+        # 1. Tự động viết hoa (Mã, ĐVT Kho, ĐVT Lóng)
+        if col in (0, 3, 4):
+            item = self.table.item(row, col)
+            if item:
+                text = item.text()
+                if text != text.upper():
+                    self.table.blockSignals(True)
+                    item.setText(text.upper())
+                    self.table.blockSignals(False)
+
+        # 2. Lookup từ Tên chuẩn (Cột 2) -> Mã (0) & ĐVT (3)
+        if col == 2:
+            item_name = self.table.item(row, 2)
+            if item_name:
+                name_input = item_name.text().strip().lower()
+                if name_input and hasattr(self.data_manager, 'items_dict'):
+                    info = self.data_manager.items_dict.get(name_input)
+                    if info:
+                        self.table.blockSignals(True)
+                        self._set_cell_text(row, 0, str(info.get("code", "")).upper())
+                        self._set_cell_text(row, 3, str(info.get("unit", "")).upper())
+                        self.table.blockSignals(False)
+
+        # 3. Lookup từ Mã vật tư (Cột 0) -> Tên (2) & ĐVT (3) - BỔ SUNG THEO YÊU CẦU MỚI
+        if col == 0:
+            item_code = self.table.item(row, 0)
+            if item_code:
+                code_input = item_code.text().strip().lower()
+                if code_input and hasattr(self.data_manager, 'items_by_code'):
+                    info = self.data_manager.items_by_code.get(code_input)
+                    if info:
+                        self.table.blockSignals(True)
+                        self._set_cell_text(row, 2, str(info.get("name", "")))
+                        self._set_cell_text(row, 3, str(info.get("unit", "")).upper())
+                        self.table.blockSignals(False)
+
+    def _set_cell_text(self, row, col, text):
+        item = self.table.item(row, col)
+        if not item:
+            item = QTableWidgetItem(text)
+            self.table.setItem(row, col, item)
+        else:
+            item.setText(text)
+        item.setForeground(QColor("#BDD8E9"))
 
     def _stylesheet(self):
         return """
