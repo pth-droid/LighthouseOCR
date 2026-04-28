@@ -25,6 +25,7 @@ import threading
 import math
 import logging
 from path_utils import get_asset_path, get_root_dir
+from constants import ROUTING_CONF_THRESHOLD
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -451,7 +452,7 @@ class OCRWorker(QThread):
                     status_callback=self._log
                 )
 
-                if avg_conf > 0.90:
+                if avg_conf > ROUTING_CONF_THRESHOLD:
                     self._log("🔀 Phân luồng In (1A): Độ tin cậy cao → Flash Structurer")
                     flash_engine = get_flash_structurer(self.api_key, app_data)
                     json_rough = flash_engine.structure_text_to_json(
