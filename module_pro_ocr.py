@@ -154,8 +154,10 @@ class ProVisionOCR:
         return result
 
 _pro_instance = None
+_pro_data_version = None
 def get_pro_ocr(api_key: str, data_store: DataManager):
-    global _pro_instance
-    if not _pro_instance or _pro_instance.api_key != api_key:
+    global _pro_instance, _pro_data_version
+    if not _pro_instance or _pro_instance.api_key != api_key or _pro_data_version != data_store._data_version:
         _pro_instance = ProVisionOCR(api_key, data_store)
+        _pro_data_version = data_store._data_version
     return _pro_instance

@@ -537,8 +537,10 @@ class LLMCalculator:
             return _normalize_pricing_basis(raw_json_obj, copy.deepcopy(raw_json_obj))
 
 _calc_instance = None
+_calc_data_version = None
 def get_calculator(api_key: str, data_store: DataManager):
-    global _calc_instance
-    if not _calc_instance or _calc_instance.api_key != api_key:
+    global _calc_instance, _calc_data_version
+    if not _calc_instance or _calc_instance.api_key != api_key or _calc_data_version != data_store._data_version:
         _calc_instance = LLMCalculator(api_key, data_store)
+        _calc_data_version = data_store._data_version
     return _calc_instance

@@ -152,9 +152,10 @@ class FlashTextStructurer:
         return result
 
 _flash_instance = None
+_flash_data_version = None
 def get_flash_structurer(api_key: str, data_store: DataManager):
-    global _flash_instance
-    # Cache instance theo api_key; khởi động lại app để load skill file mới nhất
-    if not _flash_instance or _flash_instance.api_key != api_key:
+    global _flash_instance, _flash_data_version
+    if not _flash_instance or _flash_instance.api_key != api_key or _flash_data_version != data_store._data_version:
         _flash_instance = FlashTextStructurer(api_key, data_store)
+        _flash_data_version = data_store._data_version
     return _flash_instance

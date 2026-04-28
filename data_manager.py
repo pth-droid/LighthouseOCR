@@ -110,6 +110,7 @@ class DataManager:
         self.items_context_str = ""
         self.kho_dict = {}  # {dept_upper -> ma_kho}, e.g. {"BAR": "LH-BAR", "BEP": "LH-BEP", ...}
         self.is_loaded = False
+        self._data_version = 0
         
         # Model Configs
         from path_utils import get_root_dir
@@ -197,6 +198,7 @@ class DataManager:
             self._parse_ingredients()
             self._parse_kho()
             self._parse_aliases()
+            self._data_version += 1
             self.is_loaded = True
         except Exception as e:
             raise RuntimeError(f"Lỗi khi đọc file Master List: {e}")
