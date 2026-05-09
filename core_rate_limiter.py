@@ -23,7 +23,6 @@ class RateLimiter:
         is_pro = "pro" in bucket_key.lower()
         lock = self._pro_lock if is_pro else self._flash_lock
 
-        # Read timing state, then release lock before sleeping
         with lock:
             now = time.time()
             if is_pro:
@@ -33,6 +32,13 @@ class RateLimiter:
                 elapsed = now - self.last_flash_call_time
                 required = 4.0   # Safe delay for 15 RPM Flash limit
             wait_time = max(0.0, required - elapsed)
+            # Reserve the slot before releasing the lock — prevents a second thread
+            # from reading the same stale timestamp and computing the same wait_time.
+            reserved_time = now + wait_time
+            if is_pro:
+                self.last_pro_call_time = reserved_time
+            else:
+                self.last_flash_call_time = reserved_time
 
         if wait_time > 0:
             if wait_time > 2 and status_callback:
@@ -42,12 +48,5 @@ class RateLimiter:
                     raise EngineCancellationError("STOP_REQUESTED")
             else:
                 time.sleep(wait_time)
-
-        # Record call time after sleep
-        with lock:
-            if is_pro:
-                self.last_pro_call_time = time.time()
-            else:
-                self.last_flash_call_time = time.time()
 
 global_rate_limiter = RateLimiter()
