@@ -155,6 +155,13 @@ class AliasDictionaryDialog(QDialog):
     def _load_data(self):
         if not os.path.exists(self.alias_file):
             return
+        # Block signals so _on_cell_changed does not fire during population or
+        # sortItems — Qt fires cellChanged for each cell as it is moved during
+        # the sort, and the table is in an inconsistent state at that point.
+        # Without this guard the col-2 Tên lookup can overwrite col-0 Mã with
+        # an empty or wrong master code, causing rows to be silently dropped on
+        # the next _save_to_csv() call (which skips rows where Mã is empty).
+        self.table.blockSignals(True)
         self.table.setRowCount(0)
         try:
             with open(self.alias_file, mode='r', encoding='utf-8-sig') as f:
@@ -180,6 +187,8 @@ class AliasDictionaryDialog(QDialog):
             self.table.setColumnWidth(5, 80)
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", f"Không thể đọc file alias:\n{e}")
+        finally:
+            self.table.blockSignals(False)
 
     def _filter_table(self):
         search_text = self.search_input.text().lower()
