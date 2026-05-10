@@ -4,8 +4,11 @@ import sys
 import json
 import subprocess
 import tempfile
+import time
 from core_rate_limiter import EngineCancellationError
 from path_utils import get_root_dir, get_asset_path
+
+OCR_SUBPROCESS_TIMEOUT = 120  # seconds before killing a hung PaddleOCR subprocess
 
 class LocalPaddleOCREngine:
     def __init__(self):
@@ -79,14 +82,28 @@ class LocalPaddleOCREngine:
                 errors='ignore'
             )
             
-            # Đợi process chạy, cho phép ngắt (cancel)
-            import time
+            # Đợi process chạy, cho phép ngắt (cancel) hoặc timeout
+            start_time = time.time()
             while True:
                 if stop_event and stop_event.is_set():
                     process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
                     raise EngineCancellationError("STOP_REQUESTED")
                 if process.poll() is not None:
                     break
+                if time.time() - start_time > OCR_SUBPROCESS_TIMEOUT:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    raise RuntimeError(
+                        f"⏱️ PaddleOCR subprocess không phản hồi sau {OCR_SUBPROCESS_TIMEOUT}s. "
+                        "Vui lòng thử lại hoặc kiểm tra môi trường Python OCR."
+                    )
                 time.sleep(0.1)
 
             stdout, stderr = process.communicate()
