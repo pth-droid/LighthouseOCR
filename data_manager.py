@@ -14,7 +14,7 @@ _DATA_DIR        = get_asset_path("Data structure")
 _SUPPLIER_FILE   = os.path.join(_DATA_DIR, "Danh sach nha cung cap.xlsx")
 _INGREDIENT_FILE = os.path.join(_DATA_DIR, "Danh mục vật tư, hàng hoá.xlsx")
 _KHO_FILE        = os.path.join(_DATA_DIR, "Danh sach kho.xlsx")
-_ALIAS_FILE      = os.path.join(_DATA_DIR, "Tu_dien_alias.csv")
+_DEFAULT_ALIAS_FILE = os.path.join(_DATA_DIR, "Tu_dien_alias.csv")  # module-level fallback only
 
 # Schema constants for new ingredient file (Danh mục vật tư, hàng hoá.xlsx)
 # Row 1-4: Công ty, tiêu đề | Row 5: Column headers | Row 6+: Data
@@ -153,6 +153,35 @@ class DataManager:
         except Exception as e:
             print(f"Error saving config: {e}")
 
+    def get_alias_file_path(self) -> str:
+        """Returns the alias CSV path from lighthouse_config.json, falling back to the default asset path."""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                custom = cfg.get('alias_file_path', '')
+                if custom and os.path.isfile(custom):
+                    return custom
+        except Exception:
+            pass
+        return get_asset_path(os.path.join('Data structure', 'Tu_dien_alias.csv'))
+
+    def save_alias_file_path(self, path: str):
+        """Persists a custom alias file path to lighthouse_config.json."""
+        current_data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    current_data = json.load(f)
+            except Exception:
+                pass
+        current_data['alias_file_path'] = path
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(current_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logging.error(f"[DataManager] Lỗi lưu alias_file_path: {e}")
+
     def list_available_models(self, api_key: str) -> list[str]:
         """Gọi API để lấy danh sách các model Gemini khả dụng."""
         if not api_key: return []
@@ -230,14 +259,15 @@ class DataManager:
         Records with same (alias, slang_unit) are deduplicated (latest wins).
         """
         self.aliases_dict = {}
-        if not os.path.isfile(_ALIAS_FILE):
+        alias_file = self.get_alias_file_path()
+        if not os.path.isfile(alias_file):
             return
         import csv
         try:
             # Step 1: Gather all records, latest record for (alias, unit) pair wins
             temp_dedup = {} # key: (alias_lower, unit_lower)
-            
-            with open(_ALIAS_FILE, mode='r', encoding='utf-8') as f:
+
+            with open(alias_file, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.reader(f)
                 next(reader, None) # Skip header
                 for row in reader:
@@ -306,16 +336,17 @@ class DataManager:
         
         # Ghi vào file CSV
         import csv
-        file_exists = os.path.isfile(_ALIAS_FILE)
+        alias_file = self.get_alias_file_path()
+        file_exists = os.path.isfile(alias_file)
         try:
             # Nếu file chưa có, tạo mới với header 6 cột
             if not file_exists:
-                os.makedirs(os.path.dirname(_ALIAS_FILE), exist_ok=True)
-                with open(_ALIAS_FILE, mode='w', encoding='utf-8', newline='') as f:
+                os.makedirs(os.path.dirname(alias_file), exist_ok=True)
+                with open(alias_file, mode='w', encoding='utf-8', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow(['Alias (Tên trên phiếu)', 'Mã vật tư', 'Tên vật tư', 'Đơn vị tính', 'Đơn vị tính lóng', 'Hệ số lóng'])
-            
-            with open(_ALIAS_FILE, mode='a', encoding='utf-8', newline='') as f:
+
+            with open(alias_file, mode='a', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 factor_str = str(alias_factor) if alias_factor is not None else ""
                 writer.writerow([alias.strip(), code.strip(), ref_name.strip(), master_unit.strip(), alias_unit.strip(), factor_str])

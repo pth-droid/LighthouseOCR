@@ -4,7 +4,7 @@ import logging
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QLineEdit, QHeaderView, QAbstractItemView, QMessageBox,
-    QComboBox, QStyledItemDelegate, QCompleter
+    QComboBox, QStyledItemDelegate, QCompleter, QFileDialog
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
@@ -58,7 +58,7 @@ class AliasDictionaryDialog(QDialog):
     def __init__(self, data_manager, parent=None):
         super().__init__(parent)
         self.data_manager = data_manager
-        self.alias_file = os.path.join("Data structure", "Tu_dien_alias.csv")
+        self.alias_file = self.data_manager.get_alias_file_path()
         
         self.setWindowTitle("Quản lý Từ điển Alias (Tiếng lóng)")
         self.resize(1100, 700)
@@ -83,6 +83,23 @@ class AliasDictionaryDialog(QDialog):
         self.search_input.textChanged.connect(self._filter_table)
         header.addWidget(self.search_input)
         layout.addLayout(header)
+
+        # --- File path bar ---
+        file_bar = QHBoxLayout()
+        file_bar.addWidget(QLabel("📁 File alias:"))
+        self.file_path_display = QLineEdit()
+        self.file_path_display.setReadOnly(True)
+        self.file_path_display.setText(self.alias_file)
+        self.file_path_display.setToolTip("Đường dẫn đến file từ điển alias đang dùng")
+        self.file_path_display.setStyleSheet(
+            "QLineEdit { color: #7BBDE8; font-size: 11px; background: rgba(10,39,64,0.4); }"
+        )
+        file_bar.addWidget(self.file_path_display)
+        btn_browse = QPushButton("📂 Chọn file...")
+        btn_browse.setFixedWidth(130)
+        btn_browse.clicked.connect(self._browse_alias_file)
+        file_bar.addWidget(btn_browse)
+        layout.addLayout(file_bar)
 
         # --- Table ---
         self.table = QTableWidget()
@@ -140,7 +157,7 @@ class AliasDictionaryDialog(QDialog):
             return
         self.table.setRowCount(0)
         try:
-            with open(self.alias_file, mode='r', encoding='utf-8') as f:
+            with open(self.alias_file, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.reader(f)
                 next(reader, None) # Skip header
                 for row_data in reader:
@@ -213,6 +230,18 @@ class AliasDictionaryDialog(QDialog):
         except Exception as e:
             self.table.blockSignals(False)
             QMessageBox.critical(self, "Lỗi", f"Không thể lưu file:\n{e}")
+
+    def _browse_alias_file(self):
+        default_dir = os.path.dirname(self.alias_file) if self.alias_file else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Chọn file từ điển alias", default_dir, "CSV Files (*.csv);;All Files (*)"
+        )
+        if path:
+            self.alias_file = path
+            self.file_path_display.setText(path)
+            if self.data_manager:
+                self.data_manager.save_alias_file_path(path)
+            self._load_data()
 
     def _on_cell_changed(self, row, col):
         if not self.data_manager:
