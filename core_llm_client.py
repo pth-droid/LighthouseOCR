@@ -15,7 +15,9 @@ def parse_json_response(raw_text: str) -> dict:
         text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
         text = text.strip()
     try:
-        return json.loads(text)
+        result = json.loads(text)
+        if isinstance(result, dict):
+            return result
     except json.JSONDecodeError:
         pass
     try:
@@ -81,7 +83,8 @@ def generate_with_fallback(
                 is_rate_limit = isinstance(e, APIError) and getattr(e, 'code', None) in (429, 503)
                 if (is_rate_limit or "429" in error_msg or "503" in error_msg) and attempt < max_retries:
                     base_wait = base_wait_fn(bucket_key)
-                    wait = int(base_wait * (2 ** attempt) + random.uniform(0, 3))
+                    jitter_cap = 5 if bucket_key == "pro" else 3
+                    wait = int(base_wait * (2 ** attempt) + random.uniform(0, jitter_cap))
                     if status_callback: status_callback(f"🔁 {model_label} bận (429), đợi {wait}s...")
                     for _ in range(wait, 0, -1):
                         if stop_event and stop_event.is_set():

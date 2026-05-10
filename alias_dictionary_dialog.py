@@ -144,7 +144,7 @@ class AliasDictionaryDialog(QDialog):
                 reader = csv.reader(f)
                 next(reader, None) # Skip header
                 for row_data in reader:
-                    if not any(row_data) or len(row_data) < 2: continue
+                    if not any(row_data) or len(row_data) < 6: continue
                     row_idx = self.table.rowCount()
                     self.table.insertRow(row_idx)
                     ui_data = [row_data[1], row_data[0], row_data[2], row_data[3], row_data[4], row_data[5]]
