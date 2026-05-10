@@ -24,6 +24,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 from voucher_manager import get_next_voucher_number
 from core_rate_limiter import global_rate_limiter
+from constants import HIGH_RISK_CONF_THRESHOLD
 from path_utils import get_root_dir
 
 # ---- Paths ----
@@ -356,7 +357,7 @@ def _is_high_risk(invoice_json: dict) -> bool:
 
     supplier_code = invoice_json.get("supplier_info", {}).get("supplier_name_code", "")
     
-    if confidence < 0.80:
+    if confidence < HIGH_RISK_CONF_THRESHOLD:
         return True
     if not supplier_code or str(supplier_code).strip().lower() in ("", "mua lẻ", "mua le"):
         return True
@@ -379,7 +380,7 @@ def _is_mapping_risky(invoice_json: dict) -> bool:
         return True
     if recommended == "PRO":
         return True
-    if confidence < 0.80:
+    if confidence < HIGH_RISK_CONF_THRESHOLD:
         return True
     return False
 
