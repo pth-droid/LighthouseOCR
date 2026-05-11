@@ -6,7 +6,7 @@ import warnings
 
 # Optimize paddle startup and avoid network check for models if cached
 os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
-os.environ["FLAGS_selected_gpus"] = ""
+os.environ.pop("FLAGS_selected_gpus", None)  # must not be empty string — paddle does int(value[0])
 warnings.filterwarnings('ignore')
 logging.getLogger("ppocr").setLevel(logging.ERROR)
 logging.getLogger("paddleocr").setLevel(logging.ERROR)
@@ -121,9 +121,9 @@ def run_ocr(image_path, output_path):
             
         sys.exit(0)
     except Exception as e:
-        print(f"ERROR: {str(e)}")
         import traceback
-        traceback.print_exc()
+        print(f"ERROR: {str(e)}", file=sys.stderr)
+        traceback.print_exc()  # already goes to stderr by default
         sys.exit(1)
 
 if __name__ == "__main__":

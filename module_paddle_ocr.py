@@ -8,7 +8,6 @@ import time
 from core_rate_limiter import EngineCancellationError
 from path_utils import get_root_dir, get_asset_path
 
-OCR_SUBPROCESS_TIMEOUT = 120  # seconds before killing a hung PaddleOCR subprocess
 
 class LocalPaddleOCREngine:
     def __init__(self):
@@ -72,18 +71,22 @@ class LocalPaddleOCREngine:
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = 0  # SW_HIDE
 
+            # stdout is DEVNULL because all results go to the output_path JSON file.
+            # This prevents a pipe-buffer deadlock: PaddleOCR writes initialization
+            # output to stdout, and if the ~65 KB OS pipe buffer fills while the parent
+            # is polling (not reading), both sides block forever. stderr stays as PIPE
+            # (short tracebacks only) so we can report errors.
             process = subprocess.Popen(
                 [self.python_exe, self.runner_script, image_path, output_path],
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
                 startupinfo=startupinfo,
                 encoding='utf-8',
                 errors='ignore'
             )
-            
-            # Đợi process chạy, cho phép ngắt (cancel) hoặc timeout
-            start_time = time.time()
+
+            # Đợi process chạy, cho phép ngắt (cancel)
             while True:
                 if stop_event and stop_event.is_set():
                     process.terminate()
@@ -94,22 +97,12 @@ class LocalPaddleOCREngine:
                     raise EngineCancellationError("STOP_REQUESTED")
                 if process.poll() is not None:
                     break
-                if time.time() - start_time > OCR_SUBPROCESS_TIMEOUT:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                    raise RuntimeError(
-                        f"⏱️ PaddleOCR subprocess không phản hồi sau {OCR_SUBPROCESS_TIMEOUT}s. "
-                        "Vui lòng thử lại hoặc kiểm tra môi trường Python OCR."
-                    )
                 time.sleep(0.1)
 
-            stdout, stderr = process.communicate()
-            
+            _, stderr = process.communicate()
+
             if process.returncode != 0:
-                 raise RuntimeError(f"Lỗi chạy OCR subprocess (Code {process.returncode}):\n[STDOUT]: {stdout}\n[STDERR]: {stderr}")
+                 raise RuntimeError(f"Lỗi chạy OCR subprocess (Code {process.returncode}):\n[STDERR]: {stderr}")
 
             if not os.path.exists(output_path):
                  raise RuntimeError("Không có kết quả JSON trả về từ engine OCR độc lập.")
