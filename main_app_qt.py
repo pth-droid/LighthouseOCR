@@ -55,7 +55,7 @@ ADMIN_PASSWORD = "admin"
 CONFIG_FILE    = get_asset_path("lighthouse_config.json")
 GEMINI_API_KEY = ""
 STATIC_SALT    = "lh_app_secure_v1"  # Cố định cho password để không bị sai khi đổi máy
-APP_VERSION    = "v6.0"
+APP_VERSION    = "v6.2"
 
 # ──────────────────────────────────────────────
 #  Color Palette (Ocean Blue)
@@ -525,9 +525,16 @@ class OCRWorker(QThread):
 
             if processed_ok:
                 try:
-                    shutil.move(source_path, dest_img_path)
+                    # Save the enhanced PIL image to DONE folder (overwrites if re-run)
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext in (".jpg", ".jpeg"):
+                        image.save(dest_img_path, quality=95)
+                    else:
+                        image.save(dest_img_path)
+                    if os.path.normpath(source_path) != os.path.normpath(dest_img_path):
+                        os.remove(source_path)
                 except Exception as mv_err:
-                    self._log(f"⚠️ Không di chuyển được '{filename}': {mv_err}")
+                    self._log(f"⚠️ Không lưu được ảnh xử lý '{filename}': {mv_err}")
             else:
                 self._log(f"↩️ Giữ lại ảnh lỗi trong thư mục đầu vào: {filename}")
 

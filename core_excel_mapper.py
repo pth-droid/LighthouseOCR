@@ -1659,7 +1659,7 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
                         chiphi_ws.column_dimensions['O'].width = 40
 
             if route_to_chiphi:
-                # --- Ghi vào file Chi phí (14 cột) ---
+                # --- Ghi vào file Chi phí (15 cột + col 16 source filename) ---
                 chiphi_row_data = {
                     1:  "NK",                       # A: MÃ CHỨNG TỪ
                     2:  today_str,                   # B: NGÀY GHI SỔ
@@ -1673,7 +1673,8 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
                     12: 1,                            # L: TỶ GIÁ
                     13: total_price_final,             # M: NGUYÊN TỆ
                     14: total_price_final,             # N: THÀNH TIỀN
-                    15: notes_out                      # O: NOTES
+                    15: notes_out,                     # O: NOTES
+                    16: invoice_json.get("_source_filename", ""),  # P: source image for review panel
                 }
                 for col, value in chiphi_row_data.items():
                     cell = chiphi_ws.cell(row=chiphi_current_row, column=col, value=value)
