@@ -1,23 +1,13 @@
 import cv2
 import numpy as np
-from PIL import Image, ExifTags
+from PIL import Image, ImageOps
 
 MAX_LONG_SIDE = 2000
 
 def apply_exif_rotation(image: Image.Image) -> Image.Image:
+    """Correct camera orientation using EXIF data (all 8 orientations, including mirrored)."""
     try:
-        exif = image._getexif()
-        if exif is None:
-            return image
-        orient_key = next((k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None)
-        if orient_key is None:
-            return image
-        orientation = exif.get(orient_key)
-        rotation_map = {3: 180, 6: 270, 8: 90}
-        degrees = rotation_map.get(orientation)
-        if degrees:
-            image = image.rotate(degrees, expand=True)
-        return image
+        return ImageOps.exif_transpose(image)
     except Exception:
         return image
 
@@ -107,6 +97,35 @@ def get_document_contour(image_cv):
         return document_contour.reshape(4, 2) * ratio
     return None
 
+def deskew_image(cv_img: np.ndarray) -> np.ndarray:
+    """Detect dominant text-line angle and rotate to correct skew up to ±15°."""
+    gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.bitwise_not(gray)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    # Dilate horizontally to merge characters into text-line blobs
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 3))
+    dilated = cv2.dilate(thresh, kernel)
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    angles = []
+    for c in contours:
+        if cv2.contourArea(c) < 500:
+            continue
+        rect = cv2.minAreaRect(c)
+        angle = rect[-1]
+        if angle < -45:
+            angle += 90
+        angles.append(angle)
+    if not angles:
+        return cv_img
+    skew = float(np.median(angles))
+    if abs(skew) < 0.5 or abs(skew) > 15:
+        return cv_img
+    print(f"  [Pre-process] Deskew: correcting {skew:.2f}°...")
+    (h, w) = cv_img.shape[:2]
+    M = cv2.getRotationMatrix2D((w // 2, h // 2), skew, 1.0)
+    return cv2.warpAffine(cv_img, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+
 def resize_if_needed(img: Image.Image) -> Image.Image:
     w, h = img.size
     long_side = max(w, h)
@@ -139,6 +158,9 @@ def prepare_image(image_path: str) -> Image.Image:
             print("  [Pre-process] No document contour detected, using original image...")
             processed_cv = cv_img
 
+        # Step 3b: Deskew — correct residual text-line tilt (up to ±15°)
+        processed_cv = deskew_image(processed_cv)
+
         # Step 4: Denoising — remove phone photo noise/compression artifacts (BGR only)
         if len(processed_cv.shape) == 3 and processed_cv.shape[2] == 3:
             print("  [Pre-process] Denoising (fastNlMeansDenoisingColored)...")
@@ -152,7 +174,7 @@ def prepare_image(image_path: str) -> Image.Image:
         print("  [Pre-process] CLAHE contrast enhancement...")
         lab = cv2.cvtColor(processed_cv, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
         l = clahe.apply(l)
         lab = cv2.merge((l, a, b))
         processed_cv = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
