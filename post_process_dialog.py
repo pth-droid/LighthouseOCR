@@ -7,10 +7,11 @@ import re
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QTabWidget, QWidget, QCheckBox, QMessageBox,
-    QHeaderView, QAbstractItemView, QStyledItemDelegate, QComboBox, QApplication, QCompleter
+    QHeaderView, QAbstractItemView, QStyledItemDelegate, QComboBox, QApplication, QCompleter,
+    QSplitter, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor
+from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 from path_utils import get_root_dir, get_asset_path
@@ -313,7 +314,8 @@ class PostProcessDialog(QDialog):
         self._pnmh_rows: list[dict] = []
         self._pnmh_row_indices: list[int] = []
         self._deleted_pnmh_ws_rows: list[int] = []
-        
+        self._pnmh_image_filenames: list[str] = []  # col 28 from Excel: source image filename per row
+
         # Dữ liệu Chi phí
         self._chiphi_rows: list[dict] = []
         self._chiphi_row_indices: list[int] = []
@@ -381,11 +383,11 @@ class PostProcessDialog(QDialog):
 
     def _build_pnmh_tab(self):
         layout = QVBoxLayout(self.tab_pnmh)
-        
+
         header = QHBoxLayout()
         header.addWidget(QLabel("<b>Dữ liệu Phiếu Nhập Mua Hàng (PNMH)</b>"))
         header.addStretch()
-        
+
         self.btn_transfer = QPushButton("➡  Chuyển sang Chi phí")
         self.btn_transfer.setObjectName("btn_transfer")
         self.btn_transfer.setEnabled(False)
@@ -398,17 +400,25 @@ class PostProcessDialog(QDialog):
         header.addWidget(self.btn_add_pnmh)
         layout.addLayout(header)
 
+        # ── Horizontal splitter: table (left) + image panel (right) ──
+        self.pnmh_splitter = QSplitter(Qt.Horizontal)
+        self.pnmh_splitter.setHandleWidth(6)
+        self.pnmh_splitter.setStyleSheet(
+            "QSplitter::handle { background: rgba(123,189,232,0.15); border-radius: 3px; }"
+        )
+
+        # ── Left: data table ──
         self.pnmh_table = PasteableTableWidget()
         self.pnmh_table.setColumnCount(len(_PNMH_COLS_INFO) + 1)
         col_labels = ["X"] + [lbl for _, lbl in _PNMH_COLS_INFO]
         self.pnmh_table.setHorizontalHeaderLabels(col_labels)
-        
+
         self.pnmh_table.setEditTriggers(
-            QAbstractItemView.AnyKeyPressed | 
-            QAbstractItemView.DoubleClicked | 
+            QAbstractItemView.AnyKeyPressed |
+            QAbstractItemView.DoubleClicked |
             QAbstractItemView.SelectedClicked
         )
-        
+
         # Nạp dữ liệu danh mục cho Dropdowns
         supplier_list = []
         if self.app_data:
@@ -429,13 +439,53 @@ class PostProcessDialog(QDialog):
         self.pnmh_table.setItemDelegateForColumn(8, ComboBoxDelegate(self._get_dvt_options, self.pnmh_table))
 
         self.pnmh_table.cellChanged.connect(self._on_pnmh_cell_changed)
-        
+
         # Bật menu chuột phải cho PNMH
         self.pnmh_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.pnmh_table.customContextMenuRequested.connect(self._show_pnmh_context_menu)
 
+        # Selection signal: hiển thị ảnh hóa đơn tương ứng
+        self.pnmh_table.selectionModel().selectionChanged.connect(self._on_pnmh_selection_changed)
+
         self._setup_table_style(self.pnmh_table)
-        layout.addWidget(self.pnmh_table, stretch=1)
+        self.pnmh_splitter.addWidget(self.pnmh_table)
+
+        # ── Right: invoice image panel ──
+        self.img_scroll = QScrollArea()
+        self.img_scroll.setWidgetResizable(True)
+        self.img_scroll.setFrameShape(QFrame.NoFrame)
+        self.img_scroll.setStyleSheet(
+            "QScrollArea { background: rgba(0,10,20,0.6); border: 1px solid rgba(123,189,232,0.2); border-radius: 4px; }"
+        )
+        self.img_scroll.setMinimumWidth(200)
+
+        img_container = QWidget()
+        img_container.setStyleSheet("background: transparent;")
+        img_panel_layout = QVBoxLayout(img_container)
+        img_panel_layout.setContentsMargins(8, 8, 8, 8)
+        img_panel_layout.setSpacing(6)
+
+        img_title = QLabel("🖼  Ảnh Hóa Đơn")
+        img_title.setAlignment(Qt.AlignCenter)
+        img_title.setStyleSheet("color: #7BBDE8; font-weight: 700; font-size: 12px;")
+        img_panel_layout.addWidget(img_title)
+
+        self.img_label = QLabel("Chọn một dòng\nđể xem ảnh hóa đơn")
+        self.img_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        self.img_label.setWordWrap(True)
+        self.img_label.setStyleSheet("color: #49769F; font-size: 12px;")
+        self.img_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        img_panel_layout.addWidget(self.img_label)
+        img_panel_layout.addStretch()
+
+        self.img_scroll.setWidget(img_container)
+        self.pnmh_splitter.addWidget(self.img_scroll)
+
+        # ── Splitter proportions: table 72%, image panel 28% ──
+        self.pnmh_splitter.setStretchFactor(0, 72)
+        self.pnmh_splitter.setStretchFactor(1, 28)
+
+        layout.addWidget(self.pnmh_splitter, stretch=1)
 
     def _get_dvt_options(self, index):
         row = index.row()
@@ -460,6 +510,39 @@ class PostProcessDialog(QDialog):
             if all_units:
                 return sorted(list(all_units))
         return []
+
+    def _on_pnmh_selection_changed(self):
+        indexes = self.pnmh_table.selectedIndexes()
+        if not indexes:
+            return
+        row = min(idx.row() for idx in indexes)
+        if row >= len(self._pnmh_image_filenames):
+            self.img_label.setPixmap(QPixmap())
+            self.img_label.setText("Không có ảnh\ncho dòng này")
+            return
+        img_filename = self._pnmh_image_filenames[row]
+        if not img_filename:
+            self.img_label.setPixmap(QPixmap())
+            self.img_label.setText("Không có ảnh\ncho dòng này")
+            return
+        done_dir = os.path.dirname(self.pnmh_path)
+        img_path = os.path.join(done_dir, img_filename)
+        self._display_invoice_image(img_path)
+
+    def _display_invoice_image(self, img_path: str):
+        if not os.path.exists(img_path):
+            self.img_label.setPixmap(QPixmap())
+            self.img_label.setText(f"Không tìm thấy ảnh:\n{os.path.basename(img_path)}")
+            return
+        pix = QPixmap(img_path)
+        if pix.isNull():
+            self.img_label.setPixmap(QPixmap())
+            self.img_label.setText("Không thể tải ảnh")
+            return
+        panel_w = max(self.img_scroll.viewport().width() - 16, 100)
+        scaled = pix.scaledToWidth(panel_w, Qt.SmoothTransformation)
+        self.img_label.setText("")
+        self.img_label.setPixmap(scaled)
 
     def _build_chiphi_tab(self):
         layout = QVBoxLayout(self.tab_chiphi)
@@ -516,6 +599,7 @@ class PostProcessDialog(QDialog):
         self.pnmh_table.setRowCount(0)
         self._pnmh_rows.clear()
         self._pnmh_row_indices.clear()
+        self._pnmh_image_filenames.clear()
 
         if not os.path.exists(self.pnmh_path): return
 
@@ -539,6 +623,7 @@ class PostProcessDialog(QDialog):
 
                 self._pnmh_rows.append(row_vals)
                 self._pnmh_row_indices.append(row_idx)
+                self._pnmh_image_filenames.append(str(row_vals.get(28, "") or ""))
             wb.close()
             self._populate_pnmh_table()
         except Exception as e:
@@ -939,6 +1024,8 @@ class PostProcessDialog(QDialog):
                         self._deleted_pnmh_ws_rows.append(self._pnmh_row_indices[r])
                         self._pnmh_rows.pop(r)
                         self._pnmh_row_indices.pop(r)
+                        if r < len(self._pnmh_image_filenames):
+                            self._pnmh_image_filenames.pop(r)
         else: # Chi phí
             selected = self.chiphi_table.selectedRanges()
             if not selected:
@@ -1004,6 +1091,8 @@ class PostProcessDialog(QDialog):
                 self.pnmh_table.removeRow(ui_idx)
                 self._pnmh_rows.pop(ui_idx)
                 self._pnmh_row_indices.pop(ui_idx)
+                if ui_idx < len(self._pnmh_image_filenames):
+                    self._pnmh_image_filenames.pop(ui_idx)
             self._on_pnmh_check_changed()
             
             self._load_chiphi()

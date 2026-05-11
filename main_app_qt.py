@@ -502,6 +502,7 @@ class OCRWorker(QThread):
                 with open(dest_json, "w", encoding="utf-8") as jf:
                     json.dump(invoice_json, jf, ensure_ascii=False, indent=2)
 
+                invoice_json["_source_filename"] = filename  # Tag for image preview panel
                 all_results.append(invoice_json)
                 confidence = invoice_json.get("document_info", {}).get("confidence_score", 1.0)
                 supplier   = invoice_json.get("supplier_info", {}).get("supplier_name_code", "?")
