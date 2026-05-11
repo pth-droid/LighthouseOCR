@@ -678,6 +678,17 @@ class PostProcessDialog(QDialog):
             scroll.viewport().setCursor(Qt.ArrowCursor)
             return True
 
+        if etype == QEvent.ContextMenu:
+            if state['path'] and os.path.exists(state['path']):
+                from PyQt5.QtWidgets import QMenu, QAction
+                menu = QMenu(self)
+                act = QAction("📂  Mở thư mục chứa ảnh", self)
+                folder = os.path.dirname(os.path.abspath(state['path']))
+                act.triggered.connect(lambda _checked=False, f=folder: os.startfile(f))
+                menu.addAction(act)
+                menu.exec_(event.globalPos())
+            return True
+
         return super().eventFilter(obj, event)
 
     def _build_chiphi_tab(self):
