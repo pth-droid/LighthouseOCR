@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QHeaderView, QAbstractItemView, QStyledItemDelegate, QComboBox, QApplication, QCompleter,
     QSplitter, QScrollArea, QFrame, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QEvent, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QEvent, QPoint, QSettings, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
@@ -262,24 +262,26 @@ class ComboBoxDelegate(QStyledItemDelegate):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-def _append_to_chiphi(chiphi_ws, chiphi_row: int, pnmh_row_data: dict, kho_dict: dict):
+def _append_to_chiphi(chiphi_ws, chiphi_row: int, pnmh_row_data: dict, kho_dict: dict,
+                      source_filename: str = ""):
     today_str = datetime.date.today().strftime("%d/%m/%Y")
     bo_phan   = str(pnmh_row_data.get(6, "") or "").strip()
 
     chiphi_data = {
-        1:  "NK",           
+        1:  "NK",
         2:  today_str,
-        3:  pnmh_row_data.get(2, ""),           
-        4:  bo_phan,                             
-        7:  pnmh_row_data.get(8, ""),           
-        8:  pnmh_row_data.get(9, ""),           
-        9:  6421,                                
-        10: 331,                                 
+        3:  pnmh_row_data.get(2, ""),
+        4:  bo_phan,
+        7:  pnmh_row_data.get(8, ""),
+        8:  pnmh_row_data.get(9, ""),
+        9:  6421,
+        10: 331,
         11: "VND",
         12: 1,
-        13: pnmh_row_data.get(20, None),        
-        14: pnmh_row_data.get(20, None),        
+        13: pnmh_row_data.get(20, None),
+        14: pnmh_row_data.get(20, None),
         15: f"[Chuyển từ PNMH] {pnmh_row_data.get(27, '') or ''}".strip(),
+        16: source_filename,  # Source image filename for review panel
     }
 
     for col, value in chiphi_data.items():
@@ -314,21 +316,24 @@ class PostProcessDialog(QDialog):
         self._pnmh_rows: list[dict] = []
         self._pnmh_row_indices: list[int] = []
         self._deleted_pnmh_ws_rows: list[int] = []
-        self._pnmh_image_filenames: list[str] = []  # col 28 from Excel: source image filename per row
-
-        # Image viewer state
-        self._img_zoom: float = 1.0
-        self._img_path_current: str = ""
+        self._pnmh_image_filenames: list[str] = []  # col 28 from PNMH Excel
 
         # Dữ liệu Chi phí
         self._chiphi_rows: list[dict] = []
         self._chiphi_row_indices: list[int] = []
         self._deleted_chiphi_ws_rows: list[int] = []
+        self._chiphi_image_filenames: list[str] = []  # col 16 from ChiPhi Excel
+
+        # Image viewer state per panel (keyed by 'pnmh' and 'chiphi')
+        self._img_state: dict = {
+            'pnmh':   {'zoom': 1.0, 'path': '', 'pan': False, 'pan_pos': QPoint()},
+            'chiphi': {'zoom': 1.0, 'path': '', 'pan': False, 'pan_pos': QPoint()},
+        }
 
         self.setWindowTitle("Rà soát File Kết Quả")
-        self.setWindowState(Qt.WindowMaximized)
         self.setStyleSheet(self._stylesheet())
-        
+        self.finished.connect(self._save_settings)
+
         if not self.chiphi_path:
             pnmh_dir  = os.path.dirname(self.pnmh_path)
             pnmh_name = os.path.splitext(os.path.basename(self.pnmh_path))[0]
@@ -338,6 +343,7 @@ class PostProcessDialog(QDialog):
         self._build_ui()
         self._load_pnmh()
         self._load_chiphi()
+        self._load_settings()  # Restore geometry/splitter after UI is built
 
     def keyPressEvent(self, event):
         # Bỏ tính năng ấn Esc đóng bảng review
@@ -351,9 +357,47 @@ class PostProcessDialog(QDialog):
         QTimer.singleShot(0, self._apply_initial_splitter_sizes)
 
     def _apply_initial_splitter_sizes(self):
-        total = self.pnmh_splitter.width()
-        if total > 0:
-            self.pnmh_splitter.setSizes([int(total * 0.65), int(total * 0.35)])
+        settings = QSettings("LighthouseOCR", "PostProcessDialog")
+        for attr, key, default_ratio in [
+            ('pnmh_splitter',   'pnmh_splitter',   (0.65, 0.35)),
+            ('chiphi_splitter', 'chiphi_splitter',  (0.65, 0.35)),
+        ]:
+            splitter = getattr(self, attr, None)
+            if splitter is None:
+                continue
+            saved = settings.value(key)
+            if saved:
+                try:
+                    splitter.setSizes([int(s) for s in saved])
+                    continue
+                except (ValueError, TypeError):
+                    pass
+            total = splitter.width()
+            if total > 0:
+                splitter.setSizes([int(total * default_ratio[0]), int(total * default_ratio[1])])
+
+    def _load_settings(self):
+        settings = QSettings("LighthouseOCR", "PostProcessDialog")
+        maximized = settings.value("maximized", True, type=bool)
+        if maximized:
+            self.setWindowState(Qt.WindowMaximized)
+        else:
+            geom = settings.value("geometry")
+            if geom:
+                self.restoreGeometry(geom)
+            else:
+                self.setWindowState(Qt.WindowMaximized)
+
+    def _save_settings(self):
+        settings = QSettings("LighthouseOCR", "PostProcessDialog")
+        is_max = bool(self.windowState() & Qt.WindowMaximized)
+        settings.setValue("maximized", is_max)
+        if not is_max:
+            settings.setValue("geometry", self.saveGeometry())
+        for attr, key in [('pnmh_splitter', 'pnmh_splitter'), ('chiphi_splitter', 'chiphi_splitter')]:
+            splitter = getattr(self, attr, None)
+            if splitter:
+                settings.setValue(key, splitter.sizes())
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -393,6 +437,41 @@ class PostProcessDialog(QDialog):
         footer.addWidget(self.btn_cancel)
         footer.addWidget(self.btn_save)
         root.addLayout(footer)
+
+    def _build_image_panel(self, scroll_attr: str, label_attr: str) -> QWidget:
+        """Factory: builds a right-side invoice image panel. Stores scroll/label as self.<attr>."""
+        panel = QWidget()
+        panel.setStyleSheet(
+            "background: rgba(0,10,20,0.6); border: 1px solid rgba(123,189,232,0.2); border-radius: 4px;"
+        )
+        pl = QVBoxLayout(panel)
+        pl.setContentsMargins(6, 6, 6, 6)
+        pl.setSpacing(4)
+
+        title = QLabel("🖼  Ảnh Hóa Đơn  |  Cuộn: zoom  |  Kéo chuột: di chuyển")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("color: #7BBDE8; font-weight: 700; font-size: 11px; border: none; background: transparent;")
+        title.setFixedHeight(22)
+        pl.addWidget(title)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(False)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.setMinimumWidth(200)
+
+        label = QLabel("Chọn một dòng\nđể xem ảnh hóa đơn")
+        label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #49769F; font-size: 12px; background: transparent;")
+        scroll.setWidget(label)
+        scroll.viewport().installEventFilter(self)
+
+        pl.addWidget(scroll, stretch=1)
+
+        setattr(self, scroll_attr, scroll)
+        setattr(self, label_attr, label)
+        return panel
 
     def _build_pnmh_tab(self):
         layout = QVBoxLayout(self.tab_pnmh)
@@ -464,37 +543,7 @@ class PostProcessDialog(QDialog):
         self.pnmh_splitter.addWidget(self.pnmh_table)
 
         # ── Right: invoice image panel ──
-        right_panel = QWidget()
-        right_panel.setStyleSheet("background: rgba(0,10,20,0.6); border: 1px solid rgba(123,189,232,0.2); border-radius: 4px;")
-        right_panel_layout = QVBoxLayout(right_panel)
-        right_panel_layout.setContentsMargins(6, 6, 6, 6)
-        right_panel_layout.setSpacing(4)
-
-        img_title = QLabel("🖼  Ảnh Hóa Đơn  |  Cuộn để phóng to/thu nhỏ")
-        img_title.setAlignment(Qt.AlignCenter)
-        img_title.setStyleSheet("color: #7BBDE8; font-weight: 700; font-size: 11px; border: none; background: transparent;")
-        img_title.setFixedHeight(22)
-        right_panel_layout.addWidget(img_title)
-
-        self.img_scroll = QScrollArea()
-        self.img_scroll.setWidgetResizable(False)
-        self.img_scroll.setFrameShape(QFrame.NoFrame)
-        self.img_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-        )
-        self.img_scroll.setMinimumWidth(200)
-
-        self.img_label = QLabel("Chọn một dòng\nđể xem ảnh hóa đơn")
-        self.img_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
-        self.img_label.setWordWrap(True)
-        self.img_label.setStyleSheet("color: #49769F; font-size: 12px; background: transparent;")
-        self.img_scroll.setWidget(self.img_label)
-
-        # Install wheel event filter on viewport for zoom
-        self.img_scroll.viewport().installEventFilter(self)
-
-        right_panel_layout.addWidget(self.img_scroll, stretch=1)
-        self.pnmh_splitter.addWidget(right_panel)
+        self.pnmh_splitter.addWidget(self._build_image_panel('img_scroll', 'img_label'))
 
         # ── Resize weights: table 65%, image panel 35% ──
         self.pnmh_splitter.setStretchFactor(0, 65)
@@ -531,51 +580,104 @@ class PostProcessDialog(QDialog):
         if not indexes:
             return
         row = min(idx.row() for idx in indexes)
-        if row >= len(self._pnmh_image_filenames):
-            self._clear_image("Không có ảnh\ncho dòng này")
+        if row >= len(self._pnmh_image_filenames) or not self._pnmh_image_filenames[row]:
+            self._clear_image('pnmh', "Không có ảnh\ncho dòng này")
             return
-        img_filename = self._pnmh_image_filenames[row]
-        if not img_filename:
-            self._clear_image("Không có ảnh\ncho dòng này")
+        self._img_state['pnmh']['zoom'] = 1.0
+        img_path = os.path.join(os.path.dirname(self.pnmh_path), self._pnmh_image_filenames[row])
+        self._display_invoice_image('pnmh', img_path)
+
+    def _on_chiphi_selection_changed(self):
+        indexes = self.chiphi_table.selectedIndexes()
+        if not indexes:
             return
-        self._img_zoom = 1.0  # Reset zoom on new row selection
-        done_dir = os.path.dirname(self.pnmh_path)
-        img_path = os.path.join(done_dir, img_filename)
-        self._display_invoice_image(img_path)
+        row = min(idx.row() for idx in indexes)
+        if row >= len(self._chiphi_image_filenames) or not self._chiphi_image_filenames[row]:
+            self._clear_image('chiphi', "Không có ảnh\ncho dòng này")
+            return
+        self._img_state['chiphi']['zoom'] = 1.0
+        img_path = os.path.join(os.path.dirname(self.pnmh_path), self._chiphi_image_filenames[row])
+        self._display_invoice_image('chiphi', img_path)
 
-    def _clear_image(self, message: str):
-        self.img_label.setPixmap(QPixmap())
-        self.img_label.setText(message)
-        self.img_label.resize(self.img_scroll.viewport().size())
-        self._img_path_current = ""
+    def _clear_image(self, panel_id: str, message: str):
+        scroll, label = self._get_img_widgets(panel_id)
+        label.setPixmap(QPixmap())
+        label.setText(message)
+        label.resize(scroll.viewport().size())
+        self._img_state[panel_id]['path'] = ''
 
-    def _display_invoice_image(self, img_path: str):
+    def _display_invoice_image(self, panel_id: str, img_path: str):
+        scroll, label = self._get_img_widgets(panel_id)
+        state = self._img_state[panel_id]
         try:
             if not os.path.exists(img_path):
-                self._clear_image(f"Không tìm thấy ảnh:\n{img_path}")
+                self._clear_image(panel_id, f"Không tìm thấy ảnh:\n{img_path}")
                 return
             pix = QPixmap(img_path)
             if pix.isNull():
-                self._clear_image("Không thể tải ảnh")
+                self._clear_image(panel_id, "Không thể tải ảnh")
                 return
-            self._img_path_current = img_path
-            base_w = max(self.img_scroll.viewport().width() - 4, 100)
-            target_w = max(int(base_w * self._img_zoom), 50)
+            state['path'] = img_path
+            base_w = max(scroll.viewport().width() - 4, 100)
+            target_w = max(int(base_w * state['zoom']), 50)
             scaled = pix.scaledToWidth(target_w, Qt.SmoothTransformation)
-            self.img_label.setText("")
-            self.img_label.setPixmap(scaled)
-            self.img_label.resize(scaled.size())
+            label.setText("")
+            label.setPixmap(scaled)
+            label.resize(scaled.size())
         except Exception:
-            self._clear_image("Lỗi hiển thị ảnh")
+            self._clear_image(panel_id, "Lỗi hiển thị ảnh")
+
+    def _panel_id_for_viewport(self, obj) -> str | None:
+        if hasattr(self, 'img_scroll') and obj is self.img_scroll.viewport():
+            return 'pnmh'
+        if hasattr(self, 'chiphi_img_scroll') and obj is self.chiphi_img_scroll.viewport():
+            return 'chiphi'
+        return None
+
+    def _get_img_widgets(self, panel_id: str):
+        if panel_id == 'pnmh':
+            return self.img_scroll, self.img_label
+        return self.chiphi_img_scroll, self.chiphi_img_label
 
     def eventFilter(self, obj, event):
-        if obj is self.img_scroll.viewport() and event.type() == QEvent.Wheel:
+        pid = self._panel_id_for_viewport(obj)
+        if pid is None:
+            return super().eventFilter(obj, event)
+
+        scroll, label = self._get_img_widgets(pid)
+        state = self._img_state[pid]
+        etype = event.type()
+
+        if etype == QEvent.Wheel:
             delta = event.angleDelta().y()
             factor = 1.15 if delta > 0 else (1.0 / 1.15)
-            self._img_zoom = max(0.2, min(8.0, self._img_zoom * factor))
-            if self._img_path_current:
-                self._display_invoice_image(self._img_path_current)
-            return True  # Consume event; don't also scroll the splitter
+            state['zoom'] = max(0.2, min(8.0, state['zoom'] * factor))
+            if state['path']:
+                self._display_invoice_image(pid, state['path'])
+            return True  # Consume; don't propagate to splitter
+
+        if etype == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+            state['pan'] = True
+            state['pan_pos'] = event.pos()
+            scroll.viewport().setCursor(Qt.ClosedHandCursor)
+            return True
+
+        if etype == QEvent.MouseMove and state['pan']:
+            delta = event.pos() - state['pan_pos']
+            state['pan_pos'] = event.pos()
+            scroll.horizontalScrollBar().setValue(
+                scroll.horizontalScrollBar().value() - delta.x()
+            )
+            scroll.verticalScrollBar().setValue(
+                scroll.verticalScrollBar().value() - delta.y()
+            )
+            return True
+
+        if etype == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+            state['pan'] = False
+            scroll.viewport().setCursor(Qt.ArrowCursor)
+            return True
+
         return super().eventFilter(obj, event)
 
     def _build_chiphi_tab(self):
@@ -589,17 +691,24 @@ class PostProcessDialog(QDialog):
         header.addWidget(self.btn_add_chiphi)
         layout.addLayout(header)
 
+        # ── Horizontal splitter: table (left) + image panel (right) ──
+        self.chiphi_splitter = QSplitter(Qt.Horizontal)
+        self.chiphi_splitter.setHandleWidth(6)
+        self.chiphi_splitter.setStyleSheet(
+            "QSplitter::handle { background: rgba(123,189,232,0.15); border-radius: 3px; }"
+        )
+
         self.chiphi_table = PasteableTableWidget()
         self.chiphi_table.setColumnCount(len(_CHIPHI_COLS_INFO))
         col_labels = [lbl for _, lbl in _CHIPHI_COLS_INFO]
         self.chiphi_table.setHorizontalHeaderLabels(col_labels)
-        
+
         self.chiphi_table.setEditTriggers(
-            QAbstractItemView.AnyKeyPressed | 
-            QAbstractItemView.DoubleClicked | 
+            QAbstractItemView.AnyKeyPressed |
+            QAbstractItemView.DoubleClicked |
             QAbstractItemView.SelectedClicked
         )
-        
+
         # Nạp dữ liệu danh mục cho Dropdowns (Chi phí)
         supplier_list = []
         if self.app_data:
@@ -615,9 +724,18 @@ class PostProcessDialog(QDialog):
         self.chiphi_table.setItemDelegateForColumn(4, ComboBoxDelegate(item_list, self.chiphi_table))
 
         self.chiphi_table.cellChanged.connect(self._on_chiphi_cell_changed)
+        self.chiphi_table.selectionModel().selectionChanged.connect(self._on_chiphi_selection_changed)
 
         self._setup_table_style(self.chiphi_table)
-        layout.addWidget(self.chiphi_table, stretch=1)
+        self.chiphi_splitter.addWidget(self.chiphi_table)
+
+        # ── Right: invoice image panel ──
+        self.chiphi_splitter.addWidget(self._build_image_panel('chiphi_img_scroll', 'chiphi_img_label'))
+
+        self.chiphi_splitter.setStretchFactor(0, 65)
+        self.chiphi_splitter.setStretchFactor(1, 35)
+
+        layout.addWidget(self.chiphi_splitter, stretch=1)
 
     def _setup_table_style(self, table: QTableWidget):
         table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
@@ -733,7 +851,8 @@ class PostProcessDialog(QDialog):
         self.chiphi_table.setRowCount(0)
         self._chiphi_rows.clear()
         self._chiphi_row_indices.clear()
-        
+        self._chiphi_image_filenames.clear()
+
         if not os.path.exists(self.chiphi_path): return
 
         try:
@@ -744,6 +863,7 @@ class PostProcessDialog(QDialog):
                 row_vals = {c_idx+1: val for c_idx, val in enumerate(row)}
                 self._chiphi_rows.append(row_vals)
                 self._chiphi_row_indices.append(row_idx)
+                self._chiphi_image_filenames.append(str(row_vals.get(16, "") or ""))
             wb.close()
             self._populate_chiphi_table()
         except Exception as e:
@@ -784,7 +904,8 @@ class PostProcessDialog(QDialog):
         self.chiphi_table.setColumnWidth(7, 120)  # Thành tiền
         self.chiphi_table.setColumnWidth(8, 300)  # Ghi chú (Note)
 
-        # Luôn có 1 dòng trống dưới cùng
+        # Luôn có 1 dòng trống dưới cùng (không có ảnh)
+        self._chiphi_image_filenames.append("")
         self.chiphi_table.blockSignals(True)
         self._do_add_chiphi_row()
         self.chiphi_table.blockSignals(False)
@@ -1100,7 +1221,8 @@ class PostProcessDialog(QDialog):
 
             for ui_idx in selected_ui_indices:
                 row_data = self._read_pnmh_row_from_table(ui_idx)
-                _append_to_chiphi(chiphi_ws, chiphi_row, row_data, self.kho_dict)
+                src_fn = self._pnmh_image_filenames[ui_idx] if ui_idx < len(self._pnmh_image_filenames) else ""
+                _append_to_chiphi(chiphi_ws, chiphi_row, row_data, self.kho_dict, source_filename=src_fn)
                 chiphi_row += 1
 
             chiphi_wb.save(self.chiphi_path)
