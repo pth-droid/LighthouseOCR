@@ -476,12 +476,11 @@ class PostProcessDialog(QDialog):
         self.img_label.setStyleSheet("color: #49769F; font-size: 12px;")
         self.img_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         img_panel_layout.addWidget(self.img_label)
-        img_panel_layout.addStretch()
 
         self.img_scroll.setWidget(img_container)
         self.pnmh_splitter.addWidget(self.img_scroll)
 
-        # ── Splitter proportions: table 72%, image panel 28% ──
+        # ── Resize weights: table 72, image panel 28 (table gets ~72% of extra space on resize) ──
         self.pnmh_splitter.setStretchFactor(0, 72)
         self.pnmh_splitter.setStretchFactor(1, 28)
 
@@ -530,19 +529,23 @@ class PostProcessDialog(QDialog):
         self._display_invoice_image(img_path)
 
     def _display_invoice_image(self, img_path: str):
-        if not os.path.exists(img_path):
+        try:
+            if not os.path.exists(img_path):
+                self.img_label.setPixmap(QPixmap())
+                self.img_label.setText(f"Không tìm thấy ảnh:\n{img_path}")
+                return
+            pix = QPixmap(img_path)
+            if pix.isNull():
+                self.img_label.setPixmap(QPixmap())
+                self.img_label.setText("Không thể tải ảnh")
+                return
+            panel_w = max(self.img_scroll.viewport().width() - 16, 100)
+            scaled = pix.scaledToWidth(panel_w, Qt.SmoothTransformation)
+            self.img_label.setText("")
+            self.img_label.setPixmap(scaled)
+        except Exception:
             self.img_label.setPixmap(QPixmap())
-            self.img_label.setText(f"Không tìm thấy ảnh:\n{os.path.basename(img_path)}")
-            return
-        pix = QPixmap(img_path)
-        if pix.isNull():
-            self.img_label.setPixmap(QPixmap())
-            self.img_label.setText("Không thể tải ảnh")
-            return
-        panel_w = max(self.img_scroll.viewport().width() - 16, 100)
-        scaled = pix.scaledToWidth(panel_w, Qt.SmoothTransformation)
-        self.img_label.setText("")
-        self.img_label.setPixmap(scaled)
+            self.img_label.setText("Lỗi hiển thị ảnh")
 
     def _build_chiphi_tab(self):
         layout = QVBoxLayout(self.tab_chiphi)
@@ -1024,8 +1027,10 @@ class PostProcessDialog(QDialog):
                         self._deleted_pnmh_ws_rows.append(self._pnmh_row_indices[r])
                         self._pnmh_rows.pop(r)
                         self._pnmh_row_indices.pop(r)
-                        if r < len(self._pnmh_image_filenames):
+                        if r < len(self._pnmh_image_filenames):  # shorter: manually-added rows have no entry here
                             self._pnmh_image_filenames.pop(r)
+                assert len(self._pnmh_image_filenames) == len(self._pnmh_rows), \
+                    "Image filename list desynced from rows list"
         else: # Chi phí
             selected = self.chiphi_table.selectedRanges()
             if not selected:
@@ -1091,8 +1096,10 @@ class PostProcessDialog(QDialog):
                 self.pnmh_table.removeRow(ui_idx)
                 self._pnmh_rows.pop(ui_idx)
                 self._pnmh_row_indices.pop(ui_idx)
-                if ui_idx < len(self._pnmh_image_filenames):
+                if ui_idx < len(self._pnmh_image_filenames):  # shorter: manually-added rows have no entry here
                     self._pnmh_image_filenames.pop(ui_idx)
+            assert len(self._pnmh_image_filenames) == len(self._pnmh_rows), \
+                "Image filename list desynced from rows list"
             self._on_pnmh_check_changed()
             
             self._load_chiphi()
