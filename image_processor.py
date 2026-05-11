@@ -133,17 +133,40 @@ def prepare_image(image_path: str) -> Image.Image:
         doc_contour = get_document_contour(cv_img)
         
         if doc_contour is not None:
-            # Document found, flatten/unwarp it
-            warped_cv = perspective_transform(cv_img, doc_contour)
-            
-            # Convert back to PIL Image (RGB)
-            warped_rgb = cv2.cvtColor(warped_cv, cv2.COLOR_BGR2RGB)
-            final_img = Image.fromarray(warped_rgb)
+            print("  [Pre-process] Document contour found, applying perspective transform...")
+            processed_cv = perspective_transform(cv_img, doc_contour)
         else:
-            # Fallback to original if no 4-corner document is detected
-            final_img = pil_img
-            
-        # Step 4: Final resize to prevent memory/API overload
+            print("  [Pre-process] No document contour detected, using original image...")
+            processed_cv = cv_img
+
+        # Step 4: Denoising — remove phone photo noise/compression artifacts (BGR only)
+        if len(processed_cv.shape) == 3 and processed_cv.shape[2] == 3:
+            print("  [Pre-process] Denoising (fastNlMeansDenoisingColored)...")
+            processed_cv = cv2.fastNlMeansDenoisingColored(
+                processed_cv, None, h=10, hColor=10, templateWindowSize=7, searchWindowSize=21
+            )
+        else:
+            print("  [Pre-process] Skipping denoising (grayscale image)...")
+
+        # Step 5: CLAHE contrast enhancement — applied only to L channel in LAB space
+        print("  [Pre-process] CLAHE contrast enhancement...")
+        lab = cv2.cvtColor(processed_cv, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge((l, a, b))
+        processed_cv = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+        # Step 6: Sharpening via unsharp mask — restores text edges softened by CLAHE
+        print("  [Pre-process] Sharpening (unsharp mask)...")
+        blurred = cv2.GaussianBlur(processed_cv, (0, 0), sigmaX=1.0)
+        processed_cv = cv2.addWeighted(processed_cv, 1.5, blurred, -0.5, 0)
+
+        # Convert enhanced BGR array back to PIL Image
+        final_rgb = cv2.cvtColor(processed_cv, cv2.COLOR_BGR2RGB)
+        final_img = Image.fromarray(final_rgb)
+
+        # Step 7: Final resize to prevent memory/API overload
         return resize_if_needed(final_img)
         
     except Exception as e:
