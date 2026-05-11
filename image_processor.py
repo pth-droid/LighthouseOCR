@@ -11,6 +11,22 @@ def apply_exif_rotation(image: Image.Image) -> Image.Image:
     except Exception:
         return image
 
+def detect_and_correct_orientation(image: Image.Image) -> Image.Image:
+    """Use Tesseract OSD to detect and correct 90°/180°/270° rotation (phone photos).
+    Silently skipped if pytesseract or the Tesseract executable is not installed."""
+    try:
+        import pytesseract
+        osd = pytesseract.image_to_osd(image, output_type=pytesseract.Output.DICT)
+        rotate = int(osd.get("rotate", 0))
+        confidence = float(osd.get("orientation_conf", 0.0))
+        if rotate != 0 and confidence >= 1.5:
+            print(f"  [Pre-process] OSD: rotating {rotate}° (confidence {confidence:.2f})...")
+            return image.rotate(rotate, expand=True)
+    except Exception:
+        pass
+    return image
+
+
 def order_points(pts):
     """Sorts points into: top-left, top-right, bottom-right, bottom-left"""
     rect = np.zeros((4, 2), dtype="float32")
@@ -137,14 +153,17 @@ def resize_if_needed(img: Image.Image) -> Image.Image:
 
 def prepare_image(image_path: str) -> Image.Image:
     try:
-        # Step 1: Open and orient image via PIL
+        # Step 1: Open and orient image via PIL (EXIF — handles all 8 orientations)
         with Image.open(image_path) as img:
             img = apply_exif_rotation(img)
             if img.mode != "RGB":
                 img = img.convert("RGB")
             img.load()
             pil_img = img.copy()
-            
+
+        # Step 1b: OSD orientation correction (Tesseract) — catches 90°/180°/270° missed by EXIF
+        pil_img = detect_and_correct_orientation(pil_img)
+
         # Step 2: Convert to OpenCV format (BGR numpy array)
         cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         
