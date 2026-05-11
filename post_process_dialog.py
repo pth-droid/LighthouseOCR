@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QHeaderView, QAbstractItemView, QStyledItemDelegate, QComboBox, QApplication, QCompleter,
     QSplitter, QScrollArea, QFrame, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QEvent, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
@@ -316,13 +316,17 @@ class PostProcessDialog(QDialog):
         self._deleted_pnmh_ws_rows: list[int] = []
         self._pnmh_image_filenames: list[str] = []  # col 28 from Excel: source image filename per row
 
+        # Image viewer state
+        self._img_zoom: float = 1.0
+        self._img_path_current: str = ""
+
         # Dữ liệu Chi phí
         self._chiphi_rows: list[dict] = []
         self._chiphi_row_indices: list[int] = []
         self._deleted_chiphi_ws_rows: list[int] = []
 
         self.setWindowTitle("Rà soát File Kết Quả")
-        self.resize(1600, 900) # Đặt kích thước mặc định lớn
+        self.setWindowState(Qt.WindowMaximized)
         self.setStyleSheet(self._stylesheet())
         
         if not self.chiphi_path:
@@ -341,6 +345,15 @@ class PostProcessDialog(QDialog):
             event.ignore()
         else:
             super().keyPressEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._apply_initial_splitter_sizes)
+
+    def _apply_initial_splitter_sizes(self):
+        total = self.pnmh_splitter.width()
+        if total > 0:
+            self.pnmh_splitter.setSizes([int(total * 0.65), int(total * 0.35)])
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -451,38 +464,41 @@ class PostProcessDialog(QDialog):
         self.pnmh_splitter.addWidget(self.pnmh_table)
 
         # ── Right: invoice image panel ──
+        right_panel = QWidget()
+        right_panel.setStyleSheet("background: rgba(0,10,20,0.6); border: 1px solid rgba(123,189,232,0.2); border-radius: 4px;")
+        right_panel_layout = QVBoxLayout(right_panel)
+        right_panel_layout.setContentsMargins(6, 6, 6, 6)
+        right_panel_layout.setSpacing(4)
+
+        img_title = QLabel("🖼  Ảnh Hóa Đơn  |  Cuộn để phóng to/thu nhỏ")
+        img_title.setAlignment(Qt.AlignCenter)
+        img_title.setStyleSheet("color: #7BBDE8; font-weight: 700; font-size: 11px; border: none; background: transparent;")
+        img_title.setFixedHeight(22)
+        right_panel_layout.addWidget(img_title)
+
         self.img_scroll = QScrollArea()
-        self.img_scroll.setWidgetResizable(True)
+        self.img_scroll.setWidgetResizable(False)
         self.img_scroll.setFrameShape(QFrame.NoFrame)
         self.img_scroll.setStyleSheet(
-            "QScrollArea { background: rgba(0,10,20,0.6); border: 1px solid rgba(123,189,232,0.2); border-radius: 4px; }"
+            "QScrollArea { background: transparent; border: none; }"
         )
         self.img_scroll.setMinimumWidth(200)
-
-        img_container = QWidget()
-        img_container.setStyleSheet("background: transparent;")
-        img_panel_layout = QVBoxLayout(img_container)
-        img_panel_layout.setContentsMargins(8, 8, 8, 8)
-        img_panel_layout.setSpacing(6)
-
-        img_title = QLabel("🖼  Ảnh Hóa Đơn")
-        img_title.setAlignment(Qt.AlignCenter)
-        img_title.setStyleSheet("color: #7BBDE8; font-weight: 700; font-size: 12px;")
-        img_panel_layout.addWidget(img_title)
 
         self.img_label = QLabel("Chọn một dòng\nđể xem ảnh hóa đơn")
         self.img_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         self.img_label.setWordWrap(True)
-        self.img_label.setStyleSheet("color: #49769F; font-size: 12px;")
-        self.img_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        img_panel_layout.addWidget(self.img_label)
+        self.img_label.setStyleSheet("color: #49769F; font-size: 12px; background: transparent;")
+        self.img_scroll.setWidget(self.img_label)
 
-        self.img_scroll.setWidget(img_container)
-        self.pnmh_splitter.addWidget(self.img_scroll)
+        # Install wheel event filter on viewport for zoom
+        self.img_scroll.viewport().installEventFilter(self)
 
-        # ── Resize weights: table 72, image panel 28 (table gets ~72% of extra space on resize) ──
-        self.pnmh_splitter.setStretchFactor(0, 72)
-        self.pnmh_splitter.setStretchFactor(1, 28)
+        right_panel_layout.addWidget(self.img_scroll, stretch=1)
+        self.pnmh_splitter.addWidget(right_panel)
+
+        # ── Resize weights: table 65%, image panel 35% ──
+        self.pnmh_splitter.setStretchFactor(0, 65)
+        self.pnmh_splitter.setStretchFactor(1, 35)
 
         layout.addWidget(self.pnmh_splitter, stretch=1)
 
@@ -516,36 +532,51 @@ class PostProcessDialog(QDialog):
             return
         row = min(idx.row() for idx in indexes)
         if row >= len(self._pnmh_image_filenames):
-            self.img_label.setPixmap(QPixmap())
-            self.img_label.setText("Không có ảnh\ncho dòng này")
+            self._clear_image("Không có ảnh\ncho dòng này")
             return
         img_filename = self._pnmh_image_filenames[row]
         if not img_filename:
-            self.img_label.setPixmap(QPixmap())
-            self.img_label.setText("Không có ảnh\ncho dòng này")
+            self._clear_image("Không có ảnh\ncho dòng này")
             return
+        self._img_zoom = 1.0  # Reset zoom on new row selection
         done_dir = os.path.dirname(self.pnmh_path)
         img_path = os.path.join(done_dir, img_filename)
         self._display_invoice_image(img_path)
 
+    def _clear_image(self, message: str):
+        self.img_label.setPixmap(QPixmap())
+        self.img_label.setText(message)
+        self.img_label.resize(self.img_scroll.viewport().size())
+        self._img_path_current = ""
+
     def _display_invoice_image(self, img_path: str):
         try:
             if not os.path.exists(img_path):
-                self.img_label.setPixmap(QPixmap())
-                self.img_label.setText(f"Không tìm thấy ảnh:\n{img_path}")
+                self._clear_image(f"Không tìm thấy ảnh:\n{img_path}")
                 return
             pix = QPixmap(img_path)
             if pix.isNull():
-                self.img_label.setPixmap(QPixmap())
-                self.img_label.setText("Không thể tải ảnh")
+                self._clear_image("Không thể tải ảnh")
                 return
-            panel_w = max(self.img_scroll.viewport().width() - 16, 100)
-            scaled = pix.scaledToWidth(panel_w, Qt.SmoothTransformation)
+            self._img_path_current = img_path
+            base_w = max(self.img_scroll.viewport().width() - 4, 100)
+            target_w = max(int(base_w * self._img_zoom), 50)
+            scaled = pix.scaledToWidth(target_w, Qt.SmoothTransformation)
             self.img_label.setText("")
             self.img_label.setPixmap(scaled)
+            self.img_label.resize(scaled.size())
         except Exception:
-            self.img_label.setPixmap(QPixmap())
-            self.img_label.setText("Lỗi hiển thị ảnh")
+            self._clear_image("Lỗi hiển thị ảnh")
+
+    def eventFilter(self, obj, event):
+        if obj is self.img_scroll.viewport() and event.type() == QEvent.Wheel:
+            delta = event.angleDelta().y()
+            factor = 1.15 if delta > 0 else (1.0 / 1.15)
+            self._img_zoom = max(0.2, min(8.0, self._img_zoom * factor))
+            if self._img_path_current:
+                self._display_invoice_image(self._img_path_current)
+            return True  # Consume event; don't also scroll the splitter
+        return super().eventFilter(obj, event)
 
     def _build_chiphi_tab(self):
         layout = QVBoxLayout(self.tab_chiphi)
