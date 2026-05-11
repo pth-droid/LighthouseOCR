@@ -1,23 +1,13 @@
 import cv2
 import numpy as np
-from PIL import Image, ExifTags
+from PIL import Image, ImageOps
 
 MAX_LONG_SIDE = 2000
 
 def apply_exif_rotation(image: Image.Image) -> Image.Image:
+    """Correct camera orientation using EXIF data (all 8 orientations, including mirrored)."""
     try:
-        exif = image._getexif()
-        if exif is None:
-            return image
-        orient_key = next((k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None)
-        if orient_key is None:
-            return image
-        orientation = exif.get(orient_key)
-        rotation_map = {3: 180, 6: 270, 8: 90}
-        degrees = rotation_map.get(orientation)
-        if degrees:
-            image = image.rotate(degrees, expand=True)
-        return image
+        return ImageOps.exif_transpose(image)
     except Exception:
         return image
 
