@@ -1720,7 +1720,8 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
                     18: unit_price_final,                  # R: ĐƠN GIÁ THÀNH TIỀN
                     19: total_price_final,                 # S: THÀNH TIỀN NGUYÊN TỆ
                     20: total_price_final,                 # T: THÀNH TIỀN THÀNH TIỀN
-                    27: notes_out                          # AA: NOTES
+                    27: notes_out,                         # AA: NOTES
+                    28: invoice_json.get("_source_filename", ""),  # AB: Source image filename for preview
                 }
 
                 # M-4: Fallback rỗng thay vì hardcode mapped_code (tránh mã lỗi thời khi user sửa tên thủ công)

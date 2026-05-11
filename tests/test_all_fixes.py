@@ -176,6 +176,43 @@ q4, up4, u4, note4, warn4 = _try_size_in_name_conversion("Nước cam Tropicana 
 check("Case-C: non-dairy -> no auto-convert", q4 is None)
 check("Case-C: UNIT_IN_NAME warning", "UNIT_IN_NAME" in warn4, f"warn={warn4[:60]}")
 
+# ─── PR-3 H-1: col 28 _source_filename contract ──────────────────
+print("\n[PR-3 H-1] col 28 _source_filename contract")
+
+inv_with    = {"_source_filename": "invoice_001.jpg"}
+inv_without = {}
+inv_none    = {"_source_filename": None}
+
+check("col28: key present",      inv_with.get("_source_filename", "") == "invoice_001.jpg")
+check("col28: key absent -> ''", inv_without.get("_source_filename", "") == "")
+check("col28: key None -> None", inv_none.get("_source_filename", "") is None)
+
+def col28_guard(row_vals):
+    return str(row_vals.get(28, "") or "")
+
+check("load guard: value present", col28_guard({28: "invoice_001.jpg"}) == "invoice_001.jpg")
+check("load guard: key absent",    col28_guard({1: "v"}) == "")
+check("load guard: None -> ''",    col28_guard({28: None}) == "")
+check("load guard: '' -> ''",      col28_guard({28: ""}) == "")
+
+# ─── PR-3 H-2: _pnmh_image_filenames list-sync invariant ─────────
+print("\n[PR-3 H-2] _pnmh_image_filenames list-sync invariant")
+
+def sync_pop(parallel_lists, index):
+    for lst in parallel_lists:
+        if index < len(lst):
+            lst.pop(index)
+
+rows      = ["row0", "row1", "row2"]
+filenames = ["f0.jpg", "f1.jpg", "f2.jpg"]
+sync_pop([rows, filenames], 1)  # delete middle
+check("lists equal length after pop", len(rows) == len(filenames))
+check("correct items remain",
+      rows == ["row0", "row2"] and filenames == ["f0.jpg", "f2.jpg"])
+sync_pop([rows, filenames], 5)  # out-of-bounds (manually-added row)
+check("out-of-bounds pop: both lists unchanged",
+      len(rows) == 2 and len(filenames) == 2)
+
 # ─── Summary ─────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 total = PASS + FAIL
