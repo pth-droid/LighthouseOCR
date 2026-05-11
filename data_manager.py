@@ -6,7 +6,6 @@ Provides O(1) dictionary lookups for Excel mapping and formatted string injectio
 import os
 import re
 import logging
-import openpyxl
 from path_utils import get_asset_path
 
 # Paths resolving via utility (Handles development vs EXE root)
@@ -41,6 +40,7 @@ def validate_data_files() -> list[str]:
     
     Được thiết kế để gọi 1 lần từ main_app_qt.py ngay sau khi QApplication khởi tạo.
     """
+    import openpyxl
     warnings = []
 
     # --- Kiểm tra thư mục Data structure ---
@@ -236,6 +236,7 @@ class DataManager:
         """Parse Danh sach kho.xlsx → {dept_upper: ma_kho}.
         Expected columns: STT | Tên bộ phận | Mã Kho
         """
+        import openpyxl
         self.kho_dict = {}
         if not os.path.isfile(_KHO_FILE):
             logging.warning(f"[DataManager] Không tìm thấy file kho: {_KHO_FILE}")
@@ -355,6 +356,7 @@ class DataManager:
             logging.error(f"[DataManager] Lỗi ghi file alias: {e}")
 
     def _parse_suppliers(self):
+        import openpyxl
         try:
             wb = openpyxl.load_workbook(_SUPPLIER_FILE, data_only=True)
             ws = wb.active
@@ -391,6 +393,7 @@ class DataManager:
           [10] He_So0   — Hệ số quy đổi (1 Dvt = He_So0 Dvt0)
           [32] Ma_Nh_Vt — Mã nhóm vật tư (BEP/BAR/BANH/RANG/CCDC...)
         """
+        import openpyxl
         try:
             wb = openpyxl.load_workbook(_INGREDIENT_FILE, data_only=True)
             ws = wb.active

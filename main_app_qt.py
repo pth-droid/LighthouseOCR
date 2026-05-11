@@ -961,7 +961,6 @@ class LighthouseOCRApp(QMainWindow):
 
         if hwid_saved == hwid_current:
             self._load_main_ui()
-            threading.Thread(target=self._warm_cache, daemon=True).start()
         else:
             # Máy mới/đổi máy: Báo lỗi nhưng cho phép login admin để re-bind
             QMessageBox.critical(self, "CẢNH BÁO BẢO MẬT !!!",
