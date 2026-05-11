@@ -23,18 +23,20 @@ def _build_ocr_engine():
     import paddleocr
     from paddleocr import PaddleOCR
 
-    major = _parse_major_version(getattr(paddleocr, "__version__", "0"))
+    version_str = getattr(paddleocr, "__version__", "0")
+    major = _parse_major_version(version_str)
     if major >= 3:
-        # PaddleOCR 3.x introduces PP-OCRv5 and a new Result-object API.
+        # PaddleOCR 3.x (PP-OCRv5): let lang="vi" auto-select models.
+        # Explicit model names are omitted — they changed between 3.0 and 3.5
+        # and auto-selection is the stable API across minor versions.
         ocr = PaddleOCR(
             lang="vi",
-            text_detection_model_name="PP-OCRv5_mobile_det",
-            text_recognition_model_name="latin_PP-OCRv5_mobile_rec",
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
             device="cpu",
         )
+        print(f"[OCR] PaddleOCR {version_str} (PP-OCRv5, auto-model, lang=vi)")
         return ocr, "v3"
 
     ocr = PaddleOCR(

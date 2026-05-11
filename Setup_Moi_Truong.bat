@@ -140,20 +140,20 @@ if /I "%OCR_STACK%"=="legacy" (
         goto abort
     )
 ) else (
-    echo [INFO] Cai stack PP-OCRv5: PaddlePaddle 3.x + PaddleOCR 3.x.
+    echo [INFO] Cai stack PP-OCRv5: PaddlePaddle 3.3.1 + PaddleOCR 3.5.0.
     "%PYTHON_EXE%" -m pip install "numpy<2.0.0" "opencv-python"
     if errorlevel 1 (
         echo [ERROR] Cai dat numpy/opencv that bai.
         goto abort
     )
-    "%PYTHON_EXE%" -m pip install "paddlepaddle==3.2.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+    "%PYTHON_EXE%" -m pip install "paddlepaddle==3.3.1" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
     if errorlevel 1 (
-        echo [ERROR] Cai dat PaddlePaddle 3.2.0 that bai.
+        echo [ERROR] Cai dat PaddlePaddle 3.3.1 that bai.
         goto abort
     )
-    "%PYTHON_EXE%" -m pip install "paddleocr>=3.0,<4.0"
+    "%PYTHON_EXE%" -m pip install "paddleocr==3.5.0"
     if errorlevel 1 (
-        echo [ERROR] Cai dat PaddleOCR 3.x that bai.
+        echo [ERROR] Cai dat PaddleOCR 3.5.0 that bai.
         goto abort
     )
 )
