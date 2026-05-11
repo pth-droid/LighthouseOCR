@@ -1,0 +1,256 @@
+/* ── Global ── */
+QWidget {
+    background: transparent;
+    color: #BDD8E9;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 15px;
+}
+
+/* ── Group-box cards (glassmorphism feel) ── */
+QGroupBox {
+    background-color: rgba(10, 65, 116, 0.45);
+    border: 1px solid rgba(123, 189, 232, 0.18);
+    border-radius: 14px;
+    margin-top: 14px;
+    padding: 16px 12px 10px 12px;
+    color: #7BBDE8;
+    font-size: 13px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 14px;
+    padding: 0 8px;
+    color: #6EA2B3;
+}
+
+/* ── Inputs ── */
+QLineEdit {
+    background-color: rgba(0, 29, 57, 0.65);
+    border: 1px solid rgba(123, 189, 232, 0.25);
+    border-radius: 10px;
+    padding: 9px 14px;
+    color: #BDD8E9;
+    selection-background-color: #49769F;
+    min-height: 38px;
+}
+QLineEdit:focus {
+    border: 1px solid #7BBDE8;
+}
+QLineEdit:read-only {
+    color: #6EA2B3;
+}
+
+/* ── Log area ── */
+QTextEdit {
+    background-color: rgba(0, 29, 57, 0.7);
+    border: 1px solid rgba(123, 189, 232, 0.12);
+    border-radius: 12px;
+    padding: 12px;
+    color: #6EA2B3;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    selection-background-color: #0A4174;
+}
+
+/* ── Buttons (shared) ── */
+QPushButton {
+    border-radius: 10px;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-size: 15px;
+    min-height: 34px;
+}
+
+/* Start */
+QPushButton#btn_start {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+        stop:0 #0A4174, stop:0.5 #49769F, stop:1 #7BBDE8);
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1px solid rgba(123, 189, 232, 0.35);
+}
+QPushButton#btn_start:hover {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+        stop:0 #49769F, stop:0.5 #7BBDE8, stop:1 #BDD8E9);
+    color: #001D39;
+}
+QPushButton#btn_start:disabled {
+    background: rgba(10, 65, 116, 0.35);
+    color: #49769F;
+    border-color: rgba(73, 118, 159, 0.2);
+}
+
+/* Stop */
+QPushButton#btn_stop {
+    background-color: rgba(180, 50, 50, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(200, 70, 70, 0.4);
+    font-size: 16px;
+    font-weight: 700;
+    min-height: 48px;
+    border-radius: 12px;
+}
+QPushButton#btn_stop:hover {
+    background-color: rgba(200, 60, 60, 0.75);
+    color: white;
+}
+QPushButton#btn_stop:disabled {
+    background-color: rgba(0, 29, 57, 0.3);
+    color: #49769F;
+    border-color: rgba(73, 118, 159, 0.15);
+}
+
+/* Browse & Open Result */
+QPushButton#btn_browse, QPushButton#btn_open_output {
+    background-color: rgba(0, 29, 57, 0.5);
+    color: #7BBDE8;
+    border: 1px solid rgba(123, 189, 232, 0.25);
+    padding: 9px 16px;
+    border-radius: 10px;
+    min-height: 38px;
+}
+QPushButton#btn_browse:hover, QPushButton#btn_open_output:hover {
+    background-color: rgba(10, 65, 116, 0.6);
+    border-color: #7BBDE8;
+    color: #BDD8E9;
+}
+
+/* Settings */
+QPushButton#btn_settings {
+    background-color: rgba(0, 29, 57, 0.3);
+    color: #49769F;
+    border: 1px solid rgba(73, 118, 159, 0.2);
+    font-size: 13px;
+    padding: 6px 14px;
+    min-height: 28px;
+    border-radius: 8px;
+}
+QPushButton#btn_settings:hover {
+    color: #7BBDE8;
+    border-color: rgba(123, 189, 232, 0.35);
+    background-color: rgba(10, 65, 116, 0.35);
+}
+
+/* Clear log */
+QPushButton#btn_clear_log {
+    background-color: transparent;
+    color: #49769F;
+    border: 1px solid rgba(73, 118, 159, 0.2);
+    font-size: 13px;
+    padding: 5px 12px;
+    min-height: 26px;
+    border-radius: 8px;
+}
+QPushButton#btn_clear_log:hover {
+    color: #7BBDE8;
+    border-color: rgba(123, 189, 232, 0.35);
+}
+
+/* ── Progress bar ── */
+QProgressBar {
+    background-color: rgba(0, 29, 57, 0.5);
+    border: 1px solid rgba(123, 189, 232, 0.15);
+    border-radius: 4px;
+    text-align: center;
+    height: 8px;
+    color: transparent;
+}
+QProgressBar::chunk {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+        stop:0 #0A4174, stop:0.5 #4E8EA2, stop:1 #7BBDE8);
+    border-radius: 3px;
+}
+
+/* ── Title labels ── */
+QLabel#lbl_title {
+    font-size: 26px;
+    font-weight: 800;
+    color: #BDD8E9;
+}
+QLabel#lbl_subtitle {
+    font-size: 14px;
+    color: #49769F;
+}
+
+/* ── Divider ── */
+QFrame#h_divider {
+    color: rgba(123, 189, 232, 0.12);
+    background-color: rgba(123, 189, 232, 0.12);
+    max-height: 1px;
+}
+
+/* ── ScrollBar ── */
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 8px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: rgba(123, 189, 232, 0.2);
+    min-height: 30px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background: rgba(123, 189, 232, 0.4);
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* ── Scrollbar (log area) ── */
+QTextEdit QScrollBar:vertical {
+    background: rgba(0, 29, 57, 0.3);
+    width: 8px;
+    border-radius: 4px;
+    margin: 2px;
+}
+QTextEdit QScrollBar::handle:vertical {
+    background: rgba(123, 189, 232, 0.25);
+    border-radius: 4px;
+    min-height: 30px;
+}
+QTextEdit QScrollBar::handle:vertical:hover {
+    background: rgba(123, 189, 232, 0.45);
+}
+QTextEdit QScrollBar::add-line:vertical,
+QTextEdit QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+/* ── ToolTips ── */
+QToolTip {
+    background-color: #001D39;
+    color: #BDD8E9;
+    border: 1px solid #7BBDE8;
+    padding: 5px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* ── Message boxes ── */
+QMessageBox {
+    background: #001D39;
+}
+QMessageBox QLabel {
+    color: #BDD8E9;
+}
+QMessageBox QPushButton {
+    background: #0A4174;
+    color: #BDD8E9;
+    border: 1px solid rgba(123, 189, 232, 0.25);
+    border-radius: 8px;
+    padding: 6px 20px;
+    min-width: 80px;
+}
+QMessageBox QPushButton:hover {
+    background: #49769F;
+    color: white;
+}
