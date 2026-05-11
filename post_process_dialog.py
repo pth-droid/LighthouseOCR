@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+from PIL import Image as PilImage
 import openpyxl
 import datetime
 import re
@@ -606,6 +607,27 @@ class PostProcessDialog(QDialog):
         label.resize(scroll.viewport().size())
         self._img_state[panel_id]['path'] = ''
 
+    def _rotate_invoice_image(self, panel_id: str, degrees: int):
+        """Rotate the on-disk image by degrees (positive = CCW) and refresh the panel."""
+        state = self._img_state[panel_id]
+        path = state.get('path', '')
+        if not path or not os.path.exists(path):
+            return
+        try:
+            img = PilImage.open(path)
+            rotated = img.rotate(degrees, expand=True)
+            img.close()
+            ext = os.path.splitext(path)[1].lower()
+            if ext in ('.jpg', '.jpeg'):
+                rotated.save(path, quality=95)
+            else:
+                rotated.save(path)
+            state['zoom'] = 1.0
+            self._display_invoice_image(panel_id, path)
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Lỗi xoay ảnh", str(e))
+
     def _display_invoice_image(self, panel_id: str, img_path: str):
         scroll, label = self._get_img_widgets(panel_id)
         state = self._img_state[panel_id]
@@ -685,10 +707,17 @@ class PostProcessDialog(QDialog):
                 menu = QMenu(self)
                 act = QAction("📂  Mở thư mục chứa ảnh", self)
                 norm_path = os.path.normpath(os.path.abspath(state['path']))
-                act.triggered.connect(lambda _checked=False, p=norm_path: subprocess.run(
+                act.triggered.connect(lambda _=False, p=norm_path: subprocess.run(
                     ['explorer', '/select,', p], check=False
                 ))
                 menu.addAction(act)
+                menu.addSeparator()
+                act_left = QAction("↩  Xoay trái 90°", self)
+                act_left.triggered.connect(lambda _=False, p=pid: self._rotate_invoice_image(p, 90))
+                menu.addAction(act_left)
+                act_right = QAction("↪  Xoay phải 90°", self)
+                act_right.triggered.connect(lambda _=False, p=pid: self._rotate_invoice_image(p, -90))
+                menu.addAction(act_right)
                 menu.exec_(event.globalPos())
             return True
 

@@ -158,6 +158,13 @@ if /I "%OCR_STACK%"=="legacy" (
     )
 )
 
+echo [INFO] Cai dat pytesseract (ho tro phat hien goc xoay anh)...
+"%PYTHON_EXE%" -m pip install "pytesseract"
+if errorlevel 1 (
+    echo [WARNING] Cai dat pytesseract that bai. Tinh nang phat hien goc xoay co the khong hoat dong.
+    echo [WARNING] Neu muon su dung tinh nang nay, cai Tesseract-OCR tu: https://github.com/UB-Mannheim/tesseract/wiki
+)
+
 echo.
 echo [3/3] TAI TRUOC MO HINH AI (WARMUP)...
 if exist "%BASE_DIR%ocr_runner.py" (
