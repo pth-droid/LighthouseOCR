@@ -680,11 +680,14 @@ class PostProcessDialog(QDialog):
 
         if etype == QEvent.ContextMenu:
             if state['path'] and os.path.exists(state['path']):
+                import subprocess
                 from PyQt5.QtWidgets import QMenu, QAction
                 menu = QMenu(self)
                 act = QAction("📂  Mở thư mục chứa ảnh", self)
-                folder = os.path.dirname(os.path.abspath(state['path']))
-                act.triggered.connect(lambda _checked=False, f=folder: os.startfile(f))
+                norm_path = os.path.normpath(os.path.abspath(state['path']))
+                act.triggered.connect(lambda _checked=False, p=norm_path: subprocess.run(
+                    ['explorer', '/select,', p], check=False
+                ))
                 menu.addAction(act)
                 menu.exec_(event.globalPos())
             return True
