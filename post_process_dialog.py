@@ -1075,7 +1075,6 @@ class PostProcessDialog(QDialog):
         menu.exec_(self.pnmh_table.viewport().mapToGlobal(pos))
 
     def _do_update_alias(self, row):
-        # Safety check: Ensure items exist before calling .text()
         it_ocr_name = self.pnmh_table.item(row, 5)
         it_item_code = self.pnmh_table.item(row, 7)
         it_alias_unit = self.pnmh_table.item(row, 8)
@@ -1086,18 +1085,26 @@ class PostProcessDialog(QDialog):
             QMessageBox.warning(self, "Thiếu thông tin", "Dòng này chưa có Tên hàng hoặc Mã vật tư.")
             return
 
-        ocr_name = it_ocr_name.text().strip()
-        item_code = it_item_code.text().strip()
+        ocr_name = it_ocr_name.text().strip()    # what the invoice/OCR says → saved as Alias
+        item_code = it_item_code.text().strip()   # item code from master list
         alias_unit = it_alias_unit.text().strip() if it_alias_unit else ""
-        
+
         if not ocr_name or not item_code:
             QMessageBox.warning(self, "Thiếu thông tin", "Tên hàng hoặc Mã vật tư đang để trống.")
             return
-            
+
+        # Look up the standard item name and master unit from the master list
+        from data_manager import app_data
+        ref_name = ""
+        master_unit = ""
+        rec = getattr(app_data, 'items_by_code', {}).get(item_code.lower(), {})
+        if rec:
+            ref_name = rec.get('name', '')
+            master_unit = rec.get('unit', '')
+
         # Tính hệ số quy đổi dựa trên đơn giá
         note = it_note.text() if it_note else ""
         alias_factor = 1.0
-        
         match = re.search(r"Gia unit:\s*([\d\s]+)", note)
         if match:
             try:
@@ -1111,23 +1118,29 @@ class PostProcessDialog(QDialog):
         confirm = QMessageBox.question(
             self, "Xác nhận",
             f"Lưu Alias mới?\n\n"
-            f"• Tên OCR: {ocr_name}\n"
+            f"• Alias (tên trên hóa đơn / OCR): {ocr_name}\n"
+            f"• Tên chuẩn (trong hệ thống):      {ref_name or '(không tìm thấy)'}\n"
             f"• Mã VT: {item_code}\n"
+            f"• ĐVT kho: {master_unit}\n"
             f"• ĐVT lóng: {alias_unit}\n"
             f"• Hệ số: {alias_factor}",
             QMessageBox.Yes | QMessageBox.No
         )
-        
+
         if confirm == QMessageBox.Yes:
             try:
-                from data_manager import app_data
                 app_data.save_alias(
                     alias=ocr_name,
                     code=item_code,
+                    ref_name=ref_name,
+                    master_unit=master_unit,
                     alias_unit=alias_unit,
-                    alias_factor=alias_factor
+                    alias_factor=alias_factor,
                 )
-                QMessageBox.information(self, "Thành công", f"Đã lưu '{ocr_name}' vào từ điển.")
+                QMessageBox.information(
+                    self, "Thành công",
+                    f"Đã lưu:\n  '{ocr_name}'  →  '{ref_name or item_code}'"
+                )
             except Exception as e:
                 QMessageBox.critical(self, "Lỗi", f"Không thể lưu alias: {e}")
 
