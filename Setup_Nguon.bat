@@ -15,7 +15,8 @@ set "PYTHON_ZIP=%PYTHON_DIR%\python.zip"
 set "GET_PIP=%PYTHON_DIR%\get-pip.py"
 set "INSTALLER=%TEMP%\vc_redist_lighthouse.x64.exe"
 set "HAS_ADMIN=0"
-set "LAUNCHER=%BASE_DIR%Chay_App.bat"
+set "LAUNCHER=%BASE_DIR%LighthouseInvoicesOCR.bat"
+set "SHORTCUT=%BASE_DIR%LighthouseInvoicesOCR.lnk"
 
 title %TITLE%
 
@@ -155,25 +156,47 @@ if exist "%BASE_DIR%ocr_runner.py" (
     echo [WARNING] Khong tim thay ocr_runner.py.
 )
 
-:: Tao file Chay_App.bat
+:: Tao file khoi dong LighthouseInvoicesOCR.bat
 echo [INFO] Tao file khoi dong ung dung...
 (
     echo @echo off
     echo cd /d "%%~dp0"
-    echo echo Dang khoi dong Lighthouse OCR...
-    echo "%%~dp0python_env\python.exe" "%%~dp0main_app_qt.py"
-    echo if errorlevel 1 pause
+    echo start "" "%%~dp0python_env\pythonw.exe" "%%~dp0main_app_qt.py"
 ) > "%LAUNCHER%"
 echo [OK] Da tao: %LAUNCHER%
+
+:: Tao icon cho shortcut (uu tien App_logo.png, fallback icon.ico)
+set "ICON_FILE=%BASE_DIR%icon.ico"
+if exist "%BASE_DIR%App_logo.png" (
+    echo [INFO] Chuyen App_logo.png thanh icon...
+    "%PYTHON_EXE%" -c "from PIL import Image; img=Image.open(r'%BASE_DIR%App_logo.png'); img.save(r'%BASE_DIR%launcher_icon.ico')" >nul 2>&1
+    if exist "%BASE_DIR%launcher_icon.ico" (
+        set "ICON_FILE=%BASE_DIR%launcher_icon.ico"
+        echo [OK] Da tao launcher_icon.ico tu App_logo.png.
+    ) else (
+        echo [WARNING] Khong the chuyen App_logo.png. Dung icon mac dinh.
+    )
+)
+
+:: Tao shortcut .lnk voi icon
+echo [INFO] Tao shortcut LighthouseInvoicesOCR.lnk...
+powershell -Command "$s=New-Object -ComObject WScript.Shell; $lnk=$s.CreateShortcut('%SHORTCUT%'); $lnk.TargetPath='%LAUNCHER%'; $lnk.WorkingDirectory='%BASE_DIR%'; $lnk.IconLocation='%ICON_FILE%'; $lnk.Description='Lighthouse Invoices OCR'; $lnk.Save()"
+if exist "%SHORTCUT%" (
+    echo [OK] Da tao shortcut: %SHORTCUT%
+) else (
+    echo [WARNING] Khong tao duoc shortcut. Dung truc tiep LighthouseInvoicesOCR.bat.
+)
 
 echo.
 echo ========================================================
 echo   CAI DAT HOAN TAT!
 echo.
 echo   De chay ung dung:
-echo     Chay_App.bat
+echo     LighthouseInvoicesOCR.lnk  (shortcut voi icon)
 echo   HOAC:
-echo     python_env\python.exe main_app_qt.py
+echo     LighthouseInvoicesOCR.bat
+echo   HOAC:
+echo     python_env\pythonw.exe main_app_qt.py
 echo.
 echo   Lan dau chay: Vao Settings (banh rang) va nhap
 echo   Gemini API Key. Lay key mien phi tai:
