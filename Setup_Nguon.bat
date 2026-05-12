@@ -161,7 +161,22 @@ echo [INFO] Tao file khoi dong ung dung...
 (
     echo @echo off
     echo cd /d "%%~dp0"
-    echo start "" "%%~dp0python_env\pythonw.exe" "%%~dp0main_app_qt.py"
+    echo if not exist "%%~dp0python_env\python.exe" ^(
+    echo     echo [LOI] Khong tim thay python_env\python.exe
+    echo     echo [INFO] Hay chay lai Setup_Nguon.bat truoc.
+    echo     pause
+    echo     exit /b 1
+    echo ^)
+    echo :: Chay ung dung khong hien console ^(pythonw^)
+    echo "%%~dp0python_env\pythonw.exe" "%%~dp0main_app_qt.py"
+    echo set _EXIT=%%errorlevel%%
+    echo if %%_EXIT%% neq 0 ^(
+    echo     echo.
+    echo     echo [LOI] Ung dung thoat voi ma loi %%_EXIT%%. Chay lai de hien thi loi:
+    echo     echo.
+    echo     "%%~dp0python_env\python.exe" "%%~dp0main_app_qt.py"
+    echo     pause
+    echo ^)
 ) > "%LAUNCHER%"
 echo [OK] Da tao: %LAUNCHER%
 
