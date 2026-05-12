@@ -54,7 +54,7 @@ Set-Content -Path $DestConfig -Value $EmptyConfig -Encoding UTF8
 
 # --- Step 4 (FULL only): Copy Data structure ---
 if ($Full) {
-    Write-Host "[4/4] Copy Data structure (FULL build only)..."
+    Write-Host "[4/4] Copy Data structure - FULL build only..."
     $DestData = Join-Path $OutputDir "Data structure"
     if (Test-Path $DataDir) {
         robocopy $DataDir $DestData /E /NFL /NDL /NJH /NJS /NC /NS /MT:8
