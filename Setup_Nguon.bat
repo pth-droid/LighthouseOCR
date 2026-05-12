@@ -161,9 +161,42 @@ echo [INFO] Tao file khoi dong ung dung...
 (
     echo @echo off
     echo cd /d "%%~dp0"
-    echo start "" "%%~dp0python_env\pythonw.exe" "%%~dp0main_app_qt.py"
+    echo if not exist "%%~dp0python_env\python.exe" ^(
+    echo     echo [LOI] Khong tim thay python_env\python.exe
+    echo     echo [INFO] Hay chay lai Setup_Nguon.bat truoc.
+    echo     pause
+    echo     exit /b 1
+    echo ^)
+    echo :: Kiem tra Python co chay duoc khong ^(bat loi DLL/VC++ thieu^)
+    echo "%%~dp0python_env\python.exe" -c "print('ok')" >nul 2>&1
+    echo if errorlevel 1 ^(
+    echo     echo [LOI] python_env\python.exe khong chay duoc.
+    echo     echo [INFO] Co the thieu Microsoft Visual C++ Redistributable 2015-2022.
+    echo     echo [INFO] Tai tai: https://aka.ms/vs/17/release/vc_redist.x64.exe
+    echo     echo [INFO] Sau do cai dat va chay lai ung dung.
+    echo     pause
+    echo     exit /b 1
+    echo ^)
+    echo :: Chay ung dung khong hien console ^(pythonw^)
+    echo "%%~dp0python_env\pythonw.exe" "%%~dp0main_app_qt.py"
+    echo set _EXIT=%%errorlevel%%
+    echo if %%_EXIT%% neq 0 ^(
+    echo     echo.
+    echo     echo [LOI] Ung dung gap loi ^(ma: %%_EXIT%%%^). Dang hien thi chi tiet:
+    echo     echo.
+    echo     "%%~dp0python_env\python.exe" "%%~dp0main_app_qt.py"
+    echo     pause
+    echo ^)
 ) > "%LAUNCHER%"
 echo [OK] Da tao: %LAUNCHER%
+
+:: Kiem tra Python chay duoc ngay sau khi setup
+echo [INFO] Kiem tra Python portable...
+"%PYTHON_EXE%" -c "import sys; print('[OK] Python', sys.version.split()[0], 'san sang.')" 2>&1
+if errorlevel 1 (
+    echo [WARNING] Python portable co van de. Co the thieu VC++ Redistributable.
+    echo [INFO] Tai VC++ tai: https://aka.ms/vs/17/release/vc_redist.x64.exe
+)
 
 :: Tao icon cho shortcut (uu tien App_logo.png, fallback icon.ico)
 set "ICON_FILE=%BASE_DIR%icon.ico"
