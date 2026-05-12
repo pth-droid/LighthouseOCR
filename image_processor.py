@@ -1,8 +1,51 @@
+import os
+import shutil
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
 MAX_LONG_SIDE = 2000
+
+# Module-level Tesseract availability flag: None = not yet checked, True/False = result
+_TESSERACT_AVAILABLE = None
+
+def _find_tesseract() -> bool:
+    """Probe common install locations and PATH for tesseract.exe.
+    Sets pytesseract.pytesseract_cmd if found. Returns True if available."""
+    global _TESSERACT_AVAILABLE
+    if _TESSERACT_AVAILABLE is not None:
+        return _TESSERACT_AVAILABLE
+
+    try:
+        import pytesseract
+
+        # 1. Check if already configured and working
+        candidates = [
+            pytesseract.pytesseract.tesseract_cmd,
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ]
+        # 2. Also check PATH
+        found_in_path = shutil.which("tesseract")
+        if found_in_path:
+            candidates.append(found_in_path)
+
+        for path in candidates:
+            if path and os.path.isfile(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                _TESSERACT_AVAILABLE = True
+                print(f"  [Pre-process] Tesseract found: {path}")
+                return True
+
+        _TESSERACT_AVAILABLE = False
+        print("  [Pre-process] Tesseract not found — OSD orientation detection skipped.")
+        print("  [Pre-process] Install from: https://github.com/UB-Mannheim/tesseract/wiki")
+    except ImportError:
+        _TESSERACT_AVAILABLE = False
+        print("  [Pre-process] pytesseract not installed — OSD orientation detection skipped.")
+
+    return False
+
 
 def apply_exif_rotation(image: Image.Image) -> Image.Image:
     """Correct camera orientation using EXIF data (all 8 orientations, including mirrored)."""
@@ -13,17 +56,20 @@ def apply_exif_rotation(image: Image.Image) -> Image.Image:
 
 def detect_and_correct_orientation(image: Image.Image) -> Image.Image:
     """Use Tesseract OSD to detect and correct 90°/180°/270° rotation (phone photos).
-    Silently skipped if pytesseract or the Tesseract executable is not installed."""
+    Skipped with a one-time warning if Tesseract is not installed."""
+    if not _find_tesseract():
+        return image
     try:
         import pytesseract
         osd = pytesseract.image_to_osd(image, output_type=pytesseract.Output.DICT)
         rotate = int(osd.get("rotate", 0))
         confidence = float(osd.get("orientation_conf", 0.0))
+        print(f"  [Pre-process] OSD result: rotate={rotate}°, confidence={confidence:.2f}")
         if rotate != 0 and confidence >= 1.5:
-            print(f"  [Pre-process] OSD: rotating {rotate}° (confidence {confidence:.2f})...")
+            print(f"  [Pre-process] OSD: applying {rotate}° rotation...")
             return image.rotate(rotate, expand=True)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [Pre-process] OSD failed: {e}")
     return image
 
 
