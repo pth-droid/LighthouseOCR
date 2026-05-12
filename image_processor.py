@@ -1,51 +1,8 @@
-import os
-import shutil
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
 MAX_LONG_SIDE = 2000
-
-# Module-level Tesseract availability flag: None = not yet checked, True/False = result
-_TESSERACT_AVAILABLE = None
-
-def _find_tesseract() -> bool:
-    """Probe common install locations and PATH for tesseract.exe.
-    Sets pytesseract.pytesseract_cmd if found. Returns True if available."""
-    global _TESSERACT_AVAILABLE
-    if _TESSERACT_AVAILABLE is not None:
-        return _TESSERACT_AVAILABLE
-
-    try:
-        import pytesseract
-
-        # 1. Check if already configured and working
-        candidates = [
-            pytesseract.pytesseract.tesseract_cmd,
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        ]
-        # 2. Also check PATH
-        found_in_path = shutil.which("tesseract")
-        if found_in_path:
-            candidates.append(found_in_path)
-
-        for path in candidates:
-            if path and os.path.isfile(path):
-                pytesseract.pytesseract.tesseract_cmd = path
-                _TESSERACT_AVAILABLE = True
-                print(f"  [Pre-process] Tesseract found: {path}")
-                return True
-
-        _TESSERACT_AVAILABLE = False
-        print("  [Pre-process] Tesseract not found — OSD orientation detection skipped.")
-        print("  [Pre-process] Install from: https://github.com/UB-Mannheim/tesseract/wiki")
-    except ImportError:
-        _TESSERACT_AVAILABLE = False
-        print("  [Pre-process] pytesseract not installed — OSD orientation detection skipped.")
-
-    return False
-
 
 def apply_exif_rotation(image: Image.Image) -> Image.Image:
     """Correct camera orientation using EXIF data (all 8 orientations, including mirrored)."""
@@ -54,23 +11,6 @@ def apply_exif_rotation(image: Image.Image) -> Image.Image:
     except Exception:
         return image
 
-def detect_and_correct_orientation(image: Image.Image) -> Image.Image:
-    """Use Tesseract OSD to detect and correct 90°/180°/270° rotation (phone photos).
-    Skipped with a one-time warning if Tesseract is not installed."""
-    if not _find_tesseract():
-        return image
-    try:
-        import pytesseract
-        osd = pytesseract.image_to_osd(image, output_type=pytesseract.Output.DICT)
-        rotate = int(osd.get("rotate", 0))
-        confidence = float(osd.get("orientation_conf", 0.0))
-        print(f"  [Pre-process] OSD result: rotate={rotate}°, confidence={confidence:.2f}")
-        if rotate != 0 and confidence >= 1.5:
-            print(f"  [Pre-process] OSD: applying {rotate}° rotation...")
-            return image.rotate(rotate, expand=True)
-    except Exception as e:
-        print(f"  [Pre-process] OSD failed: {e}")
-    return image
 
 
 def order_points(pts):
@@ -149,10 +89,18 @@ def get_document_contour(image_cv):
         peri = cv2.arcLength(c, True)
         approx = cv2.approxPolyDP(c, 0.02 * peri, True)
         
-        # If the approximated contour has 4 points and covers a reasonably large area, assume it's a document
-        if len(approx) == 4 and cv2.contourArea(approx) > 10000:
-            document_contour = approx
-            break
+        # Must be a quadrilateral with reasonable area
+        if len(approx) != 4 or cv2.contourArea(approx) <= 10000:
+            continue
+        # Guard: reject contours with extreme aspect ratio (> 3:1)
+        rect = cv2.minAreaRect(approx)
+        (w_rect, h_rect) = rect[1]
+        if w_rect > 0 and h_rect > 0:
+            ar = max(w_rect, h_rect) / min(w_rect, h_rect)
+            if ar > 3.0:
+                continue
+        document_contour = approx
+        break
             
     if document_contour is not None:
         # Scale the contour back to the original image size
@@ -197,6 +145,17 @@ def resize_if_needed(img: Image.Image) -> Image.Image:
     resample_method = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
     return img.resize((int(w * scale), int(h * scale)), resample_method)
 
+def resize_cv_if_needed(cv_img: np.ndarray) -> np.ndarray:
+    """Resize OpenCV BGR image so long side <= MAX_LONG_SIDE. Uses INTER_AREA for downscale."""
+    h, w = cv_img.shape[:2]
+    long_side = max(w, h)
+    if long_side <= MAX_LONG_SIDE:
+        return cv_img
+    scale = MAX_LONG_SIDE / long_side
+    new_w, new_h = int(w * scale), int(h * scale)
+    print(f"  [Pre-process] Resize: {w}×{h} → {new_w}×{new_h} (trước denoise)")
+    return cv2.resize(cv_img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
 def prepare_image(image_path: str) -> Image.Image:
     try:
         # Step 1: Open and orient image via PIL (EXIF — handles all 8 orientations)
@@ -207,8 +166,8 @@ def prepare_image(image_path: str) -> Image.Image:
             img.load()
             pil_img = img.copy()
 
-        # Step 1b: OSD orientation correction (Tesseract) — catches 90°/180°/270° missed by EXIF
-        pil_img = detect_and_correct_orientation(pil_img)
+        # Step 1b: 90°/180°/270° orientation is handled by PaddleOCR's
+        # use_doc_orientation_classify (enabled in ocr_runner.py).
 
         # Step 2: Convert to OpenCV format (BGR numpy array)
         cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
@@ -217,8 +176,16 @@ def prepare_image(image_path: str) -> Image.Image:
         doc_contour = get_document_contour(cv_img)
         
         if doc_contour is not None:
-            print("  [Pre-process] Document contour found, applying perspective transform...")
-            processed_cv = perspective_transform(cv_img, doc_contour)
+            warped = perspective_transform(cv_img, doc_contour)
+            # Quality check: warped result must retain at least 25% of original area
+            orig_area = cv_img.shape[0] * cv_img.shape[1]
+            warp_area = warped.shape[0] * warped.shape[1]
+            if warp_area < orig_area * 0.25:
+                print(f"  [Pre-process] Warp quá nhỏ ({warp_area/orig_area:.0%} diện tích gốc), bỏ qua perspective transform.")
+                processed_cv = cv_img
+            else:
+                print("  [Pre-process] Document contour found, applying perspective transform...")
+                processed_cv = warped
         else:
             print("  [Pre-process] No document contour detected, using original image...")
             processed_cv = cv_img
@@ -226,14 +193,19 @@ def prepare_image(image_path: str) -> Image.Image:
         # Step 3b: Deskew — correct residual text-line tilt (up to ±15°)
         processed_cv = deskew_image(processed_cv)
 
-        # Step 4: Denoising — remove phone photo noise/compression artifacts (BGR only)
-        if len(processed_cv.shape) == 3 and processed_cv.shape[2] == 3:
-            print("  [Pre-process] Denoising (fastNlMeansDenoisingColored)...")
-            processed_cv = cv2.fastNlMeansDenoisingColored(
-                processed_cv, None, h=10, hColor=10, templateWindowSize=7, searchWindowSize=21
-            )
+        # Step 4a: Resize early — denoise/enhance at ≤2000px for performance
+        processed_cv = resize_cv_if_needed(processed_cv)
+
+        # Step 4b: Denoising — skip if image is already sharp (clean scan)
+        gray_check = cv2.cvtColor(processed_cv, cv2.COLOR_BGR2GRAY)
+        laplacian_var = cv2.Laplacian(gray_check, cv2.CV_64F).var()
+        if laplacian_var > 500:
+            print(f"  [Pre-process] Denoising: Bỏ qua — ảnh đã sắc nét (laplacian={laplacian_var:.0f}).")
         else:
-            print("  [Pre-process] Skipping denoising (grayscale image)...")
+            print(f"  [Pre-process] Denoising (h=6, laplacian={laplacian_var:.0f})...")
+            processed_cv = cv2.fastNlMeansDenoisingColored(
+                processed_cv, None, h=6, hColor=6, templateWindowSize=7, searchWindowSize=21
+            )
 
         # Step 5: CLAHE contrast enhancement — applied only to L channel in LAB space
         print("  [Pre-process] CLAHE contrast enhancement...")
@@ -253,7 +225,7 @@ def prepare_image(image_path: str) -> Image.Image:
         final_rgb = cv2.cvtColor(processed_cv, cv2.COLOR_BGR2RGB)
         final_img = Image.fromarray(final_rgb)
 
-        # Step 7: Final resize to prevent memory/API overload
+        # Step 7: Final PIL resize (safety — already resized at Step 4a in CV space)
         return resize_if_needed(final_img)
         
     except Exception as e:

@@ -19,7 +19,20 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`. No other file nee
 
 ---
 
-## [v6.2] — 2026-05-12
+## [v7.1] — 2026-05-12
+
+### Added / Fixed
+
+- **Rotate buttons on image preview panel** (`post_process_dialog.py`): Rotate Left (↺) and Rotate Right (↻) buttons added to the top bar of the invoice image panel in both PNMH and Chi phí tabs.
+- **Date logic fix** (`core_excel_mapper.py`, `post_process_dialog.py`): NGÀY GHI SỔ (PNMH col A, Chi phí col B) now uses the OCR invoice date. Empty if invoice has no date. `date.today()` logic removed entirely.
+- **Image pipeline hardening** (`image_processor.py`): Geometric guards on contour detection (aspect ratio ≤3:1, warp area ≥25%), early resize before denoise (75% CPU gain), conditional denoise (Laplacian variance skip), denoise strength h=10→h=6.
+- **PaddleOCR orientation** (`ocr_runner.py`): `use_doc_orientation_classify=True` — replaces Tesseract OSD, zero extra dependency.
+- **Subprocess env fix** (`module_paddle_ocr.py`): Strip `PYTHONHOME`/`PYTHONPATH` before PaddleOCR subprocess to fix `python310.dll not found` error in PyInstaller builds.
+- **Full error logging** (`ocr_pipeline.py`): Subprocess stderr now fully logged to UI instead of being truncated to first line.
+- **Build system** (`Deploy_Build.ps1`, `.spec`): Added `-Full` flag for full build (includes Data structure). Default is Update build (code + python_env only).
+
+---
+
 
 ### Added / Enhanced
 

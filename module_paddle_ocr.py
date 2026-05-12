@@ -71,6 +71,11 @@ class LocalPaddleOCREngine:
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = 0  # SW_HIDE
 
+            # Clean environment for subprocess to avoid PyInstaller conflicts
+            sub_env = os.environ.copy()
+            sub_env.pop('PYTHONHOME', None)
+            sub_env.pop('PYTHONPATH', None)
+
             # stdout is DEVNULL because all results go to the output_path JSON file.
             # This prevents a pipe-buffer deadlock: PaddleOCR writes initialization
             # output to stdout, and if the ~65 KB OS pipe buffer fills while the parent
@@ -83,7 +88,8 @@ class LocalPaddleOCREngine:
                 text=True,
                 startupinfo=startupinfo,
                 encoding='utf-8',
-                errors='ignore'
+                errors='ignore',
+                env=sub_env
             )
 
             # Đợi process chạy, cho phép ngắt (cancel)

@@ -264,13 +264,13 @@ class ComboBoxDelegate(QStyledItemDelegate):
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def _append_to_chiphi(chiphi_ws, chiphi_row: int, pnmh_row_data: dict, kho_dict: dict,
-                      source_filename: str = ""):
-    today_str = datetime.date.today().strftime("%d/%m/%Y")
+                      source_filename: str = "", invoice_date: str = ""):
+    date_val  = invoice_date or ""
     bo_phan   = str(pnmh_row_data.get(6, "") or "").strip()
 
     chiphi_data = {
         1:  "NK",
-        2:  today_str,
+        2:  date_val,
         3:  pnmh_row_data.get(2, ""),
         4:  bo_phan,
         7:  pnmh_row_data.get(8, ""),
@@ -441,6 +441,9 @@ class PostProcessDialog(QDialog):
 
     def _build_image_panel(self, scroll_attr: str, label_attr: str) -> QWidget:
         """Factory: builds a right-side invoice image panel. Stores scroll/label as self.<attr>."""
+        # Derive panel_id: 'pnmh' or 'chiphi' from scroll_attr
+        panel_id = 'chiphi' if 'chiphi' in scroll_attr else 'pnmh'
+
         panel = QWidget()
         panel.setStyleSheet(
             "background: rgba(0,10,20,0.6); border: 1px solid rgba(123,189,232,0.2); border-radius: 4px;"
@@ -449,11 +452,36 @@ class PostProcessDialog(QDialog):
         pl.setContentsMargins(6, 6, 6, 6)
         pl.setSpacing(4)
 
-        title = QLabel("🖼  Ảnh Hóa Đơn  |  Cuộn: zoom  |  Kéo chuột: di chuyển")
-        title.setAlignment(Qt.AlignCenter)
+        # ── Top bar: title + rotate buttons ──
+        top_bar = QHBoxLayout()
+        top_bar.setSpacing(6)
+
+        title = QLabel("🖼  Ảnh Hóa Đơn  |  Cuộn: zoom  |  Kéo: di chuyển")
+        title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         title.setStyleSheet("color: #7BBDE8; font-weight: 700; font-size: 11px; border: none; background: transparent;")
-        title.setFixedHeight(22)
-        pl.addWidget(title)
+        top_bar.addWidget(title, stretch=1)
+
+        _btn_style = (
+            "QPushButton { background: rgba(10,65,116,0.5); color: #7BBDE8; border: 1px solid rgba(123,189,232,0.25);"
+            " border-radius: 5px; padding: 2px 8px; font-size: 14px; min-height: 22px; min-width: 28px; }"
+            "QPushButton:hover { background: rgba(73,118,159,0.6); color: #ffffff; }"
+            "QPushButton:pressed { background: rgba(10,65,116,0.9); }"
+        )
+        btn_left = QPushButton("↺")
+        btn_left.setToolTip("Xoay trái 90°")
+        btn_left.setStyleSheet(_btn_style)
+        btn_left.setFixedSize(30, 24)
+        btn_left.clicked.connect(lambda: self._rotate_invoice_image(panel_id, 90))
+        top_bar.addWidget(btn_left)
+
+        btn_right = QPushButton("↻")
+        btn_right.setToolTip("Xoay phải 90°")
+        btn_right.setStyleSheet(_btn_style)
+        btn_right.setFixedSize(30, 24)
+        btn_right.clicked.connect(lambda: self._rotate_invoice_image(panel_id, -90))
+        top_bar.addWidget(btn_right)
+
+        pl.addLayout(top_bar)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(False)
@@ -473,6 +501,7 @@ class PostProcessDialog(QDialog):
         setattr(self, scroll_attr, scroll)
         setattr(self, label_attr, label)
         return panel
+
 
     def _build_pnmh_tab(self):
         layout = QVBoxLayout(self.tab_pnmh)
@@ -1278,7 +1307,8 @@ class PostProcessDialog(QDialog):
             for ui_idx in selected_ui_indices:
                 row_data = self._read_pnmh_row_from_table(ui_idx)
                 src_fn = self._pnmh_image_filenames[ui_idx] if ui_idx < len(self._pnmh_image_filenames) else ""
-                _append_to_chiphi(chiphi_ws, chiphi_row, row_data, self.kho_dict, source_filename=src_fn)
+                inv_date = str(row_data.get(3, "") or "")
+                _append_to_chiphi(chiphi_ws, chiphi_row, row_data, self.kho_dict, source_filename=src_fn, invoice_date=inv_date)
                 chiphi_row += 1
 
             chiphi_wb.save(self.chiphi_path)

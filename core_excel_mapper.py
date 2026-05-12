@@ -10,7 +10,7 @@ import difflib
 import shutil
 import json
 import logging
-from datetime import date, datetime
+from datetime import datetime
 from typing import List, Dict, Any, Tuple
 
 import google.genai as genai
@@ -1250,7 +1250,6 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
     header_cell.comment = comment
     ws.column_dimensions[openpyxl.utils.get_column_letter(27)].width = 40
 
-    today_str   = date.today().strftime("%d/%m/%Y")
     current_row = _DATA_START_ROW
     
     # Auto-find the first empty data row (if template was previously populated)
@@ -1662,7 +1661,7 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
                 # --- Ghi vào file Chi phí (15 cột + col 16 source filename) ---
                 chiphi_row_data = {
                     1:  "NK",                       # A: MÃ CHỨNG TỪ
-                    2:  today_str,                   # B: NGÀY GHI SỔ
+                    2:  _format_date(txn_info.get("invoice_date", "")), # B: NGÀY GHI SỔ (= ngày hoá đơn)
                     3:  _get_voucher(),               # C: C-3 lazy voucher
                     4:  bo_phan,                      # D: BỘ PHẬN
                     7:  supplier_code,                # G: MÃ ĐỐI TƯỢNG
@@ -1700,7 +1699,7 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
             else:
                 # --- Ghi vào PNMH (logic gốc 27 cột) ---
                 row_data = {
-                    1:  today_str,                                     # A: NGÀY GHI SỔ
+                    1:  _format_date(txn_info.get("invoice_date", "")), # A: NGÀY GHI SỔ (= ngày hoá đơn)
                     2:  _get_voucher(),                                # B: C-3 lazy voucher
                     3:  _format_date(txn_info.get("invoice_date", "")), # C: NGÀY Hóa đơn
                     4:  None,                              # D: SỐ Hóa đơn

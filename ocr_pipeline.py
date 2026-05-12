@@ -153,7 +153,12 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     os.remove(dest_json)
                 except OSError:
                     pass
-            _log(f"❌ Lỗi [{filename}]: {str(e).splitlines()[0] or 'Lỗi không xác định'}")
+            # Log ALL lines of the exception — do not truncate so subprocess stderr is visible
+            err_lines = str(e).splitlines()
+            _log(f"❌ Lỗi [{filename}]: {err_lines[0] or 'Lỗi không xác định'}")
+            for line in err_lines[1:]:
+                if line.strip():
+                    _log(f"   ↳ {line.strip()}")
 
         if processed_ok:
             try:

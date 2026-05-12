@@ -5,10 +5,15 @@ logic:
   preprocessing:
     tool: "OpenCV + Pillow"
     actions:
-      - "Auto-orient images using EXIF metadata."
-      - "Detect document contours using Canny & Morphological edge detection."
-      - "Execute 4-point Perspective Transform (Perspective Warp) to flatten the document into a top-down view."
-      - "Resize to 2000px long edge (after crop) to improve OCR accuracy on handwritten and blurry invoices."
+      - "Step 1: Auto-orient images using EXIF metadata (all 8 orientations including mirrored)."
+      - "Step 1b: 90°/180°/270° orientation correction delegated to PaddleOCR's use_doc_orientation_classify (enabled in ocr_runner.py). No extra dependency."
+      - "Step 3: Detect document contours (adaptive Canny + Morphological Close) with aspect-ratio guard (≤3:1). Execute 4-point Perspective Transform with warp quality check (≥25% original area). Skipped with log if no valid contour."
+      - "Step 3b: Deskew — detect dominant text-line angle (median of minAreaRect angles) and rotate to correct skew within ±0.5°–15°."
+      - "Step 4a: Early resize to ≤2000px long edge (INTER_AREA) — ensures denoise/enhance run at bounded resolution for performance."
+      - "Step 4b: Conditional denoising — Laplacian variance check: skip if >500 (clean scan). Otherwise fastNlMeansDenoisingColored (h=6, hColor=6, template=7, search=21)."
+      - "Step 5: CLAHE contrast enhancement on L channel in LAB color space (clipLimit=1.5, tileGridSize=8×8)."
+      - "Step 6: Sharpening via unsharp mask (GaussianBlur σ=1.0, weight 1.5/-0.5) — restores text edges softened by CLAHE/denoising."
+      - "Step 7: Final PIL resize safety pass (LANCZOS) — usually no-op since Step 4a already bounded the size."
   
   ocr_extraction:
     router: "Local PaddleOCR Sandbox (portable python_env, PP-OCRv5 target with legacy fallback)"

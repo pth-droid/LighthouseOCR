@@ -31,7 +31,7 @@ def _build_ocr_engine():
         # and auto-selection is the stable API across minor versions.
         ocr = PaddleOCR(
             lang="vi",
-            use_doc_orientation_classify=False,
+            use_doc_orientation_classify=True,
             use_doc_unwarping=False,
             use_textline_orientation=False,
             device="cpu",
