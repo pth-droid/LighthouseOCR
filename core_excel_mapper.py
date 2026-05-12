@@ -10,7 +10,7 @@ import difflib
 import shutil
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Dict, Any, Tuple
 
 import google.genai as genai
