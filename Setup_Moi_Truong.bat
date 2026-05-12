@@ -158,6 +158,13 @@ if /I "%OCR_STACK%"=="legacy" (
     )
 )
 
+echo [INFO] Cai dat rapidfuzz (ho tro tim kiem ten hang nhanh)...
+"%PYTHON_EXE%" -m pip install "rapidfuzz"
+if errorlevel 1 (
+    echo [ERROR] Cai dat rapidfuzz that bai.
+    goto abort
+)
+
 echo [INFO] Cai dat pytesseract (ho tro phat hien goc xoay anh)...
 "%PYTHON_EXE%" -m pip install "pytesseract"
 if errorlevel 1 (

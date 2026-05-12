@@ -55,6 +55,11 @@ Lấy key miễn phí tại: https://aistudio.google.com
 
 ## 2. Cài đặt từ mã nguồn (nhà phát triển)
 
+> **1-click setup:** Sau khi clone repo, chạy **`Setup_Nguon.bat`** — script sẽ tự động tải Python portable, cài tất cả thư viện, warm up mô hình AI, và tạo file `Chay_App.bat` để khởi động app. Không cần cài Python thủ công.
+>
+> Các bước dưới đây là hướng dẫn thủ công nếu muốn dùng Python hệ thống.
+
+
 ### Yêu cầu hệ thống
 
 | Thành phần | Phiên bản | Ghi chú |
@@ -81,8 +86,8 @@ python -m venv .venv
 ### Bước 3 — Cài đặt thư viện
 
 ```bash
-# Thư viện UI + xử lý ảnh + Excel
-pip install "numpy<2.0.0" opencv-python Pillow PyQt5 openpyxl
+# Thư viện UI + xử lý ảnh + Excel + tìm kiếm tên hàng
+pip install "numpy<2.0.0" opencv-python Pillow PyQt5 openpyxl rapidfuzz
 
 # Google Gemini SDK
 pip install google-genai
