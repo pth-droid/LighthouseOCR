@@ -13,7 +13,7 @@ try:
 except ImportError:
     genai = None
     types = None
-    APIError = Exception
+    APIError = None
 
 from core_rate_limiter import global_rate_limiter, EngineCancellationError
 from core_llm_client import parse_json_response, generate_with_fallback
@@ -476,8 +476,13 @@ class LLMCalculator:
         except EngineCancellationError:
             raise
         except Exception as e:
-            if status_callback: status_callback(f"⚠️ Dính lỗi Toán Học LLM, trả về dữ liệu thô không phép cộng.")
-            return _normalize_pricing_basis(raw_json_obj, copy.deepcopy(raw_json_obj))
+            if APIError is not None and isinstance(e, APIError):
+                if status_callback:
+                    status_callback("[WARN] LLM API error, fallback to raw normalized data.")
+                logging.exception("[Calculator] LLM API failure")
+                return _normalize_pricing_basis(raw_json_obj, copy.deepcopy(raw_json_obj))
+            logging.exception("[Calculator] Unexpected calculation failure")
+            raise
 
 _calc_instance = None
 _calc_data_version = None
