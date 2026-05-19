@@ -31,7 +31,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QTextEdit, QProgressBar,
     QFileDialog, QDialog, QDialogButtonBox, QMessageBox,
-    QSizePolicy, QFrame, QGroupBox, QSpacerItem, QGridLayout, QComboBox, QScrollArea
+    QSizePolicy, QFrame, QGroupBox, QSpacerItem, QGridLayout, QComboBox, QScrollArea,
+    QMenu
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QSize
 from PyQt5.QtGui import (
@@ -994,6 +995,17 @@ class LighthouseOCRApp(QMainWindow):
             if is_boot:
                 self.close()
 
+    def _open_hard_case_browser_with_auth(self):
+        from admin_dialogs import AdminLoginDialog as _LoginDlg
+        login = _LoginDlg(self, self.app_config, is_boot_check=False)
+        if login.exec_() != QDialog.Accepted:
+            return
+        try:
+            from hard_case_browser import HardCaseBrowserDialog
+            HardCaseBrowserDialog(self).exec_()
+        except Exception as e:
+            self._show_error("Lỗi", f"Không thể mở Hard Cases:\n{e}")
+
     def _open_admin_config(self, is_boot=False):
         dlg = AdminConfigDialog(self, self.app_config)
         dlg.config_saved.connect(self._on_config_saved)
@@ -1098,13 +1110,6 @@ class LighthouseOCRApp(QMainWindow):
         self.btn_edit_alias.clicked.connect(self._open_alias_editor)
         mg_buttons_layout.addWidget(self.btn_edit_alias, 1)
 
-        self.btn_hard_cases = QPushButton("🗂 Hard Cases")
-        self.btn_hard_cases.setObjectName("btn_open_output")
-        self.btn_hard_cases.setToolTip("Xem danh sách hard cases đã được thu thập")
-        self.btn_hard_cases.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.btn_hard_cases.clicked.connect(self._open_hard_cases)
-        mg_buttons_layout.addWidget(self.btn_hard_cases, 1)
-        
         mg_buttons_layout.addStretch()
         mg_layout.addLayout(mg_buttons_layout)
 
@@ -1203,9 +1208,28 @@ class LighthouseOCRApp(QMainWindow):
         footer.addWidget(lbl_version)
         footer.addStretch()
 
-        btn_settings = QPushButton("⚙️  Thiết lập Hệ thống")
+        btn_settings = QPushButton("⚙️  Thiết lập Hệ thống  ▾")
         btn_settings.setObjectName("btn_settings")
-        btn_settings.clicked.connect(lambda: self._do_admin_login(is_boot=False))
+
+        def _show_settings_menu():
+            menu = QMenu(self)
+            menu.setStyleSheet(
+                "QMenu { background-color: #0A2740; color: #BDD8E9; border: 1px solid #49769F; }"
+                "QMenu::item { padding: 8px 20px; }"
+                "QMenu::item:selected { background-color: #0A4174; color: #ffffff; }"
+            )
+            act_cfg = menu.addAction("⚙️  Cấu hình hệ thống")
+            menu.addSeparator()
+            act_hc  = menu.addAction("🗂  Xem Hard Cases")
+            chosen = menu.exec_(btn_settings.mapToGlobal(
+                btn_settings.rect().topLeft()
+            ))
+            if chosen == act_cfg:
+                self._do_admin_login(is_boot=False)
+            elif chosen == act_hc:
+                self._open_hard_case_browser_with_auth()
+
+        btn_settings.clicked.connect(_show_settings_menu)
         footer.addWidget(btn_settings)
 
         layout.addLayout(footer)
@@ -1246,14 +1270,6 @@ class LighthouseOCRApp(QMainWindow):
             dlg.exec_()
         except Exception as e:
             self._show_error("Lỗi", f"Không thể mở trình chỉnh sửa Alias:\n{e}")
-
-    def _open_hard_cases(self):
-        try:
-            from hard_case_browser import HardCaseBrowserDialog
-            dlg = HardCaseBrowserDialog(self)
-            dlg.exec_()
-        except Exception as e:
-            self._show_error("Lỗi", f"Không thể mở danh sách Hard Cases:\n{e}")
 
     def _run_preflight_validation(self, show_dialog: bool = False) -> bool:
         try:

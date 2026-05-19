@@ -1123,10 +1123,6 @@ class PostProcessDialog(QDialog):
         act_hard_case = menu.addAction("🚨  Báo cáo lỗi / Hard Case")
         act_hard_case.triggered.connect(lambda: self._collect_hard_case("PNMH", row))
 
-        menu.addSeparator()
-        act_report = menu.addAction("🚩  Báo cáo OCR khó")
-        act_report.triggered.connect(lambda: self._do_report_ocr(row))
-
         menu.exec_(self.pnmh_table.viewport().mapToGlobal(pos))
 
     def _show_chiphi_context_menu(self, pos):
@@ -1221,26 +1217,35 @@ class PostProcessDialog(QDialog):
         try:
             if tab_name == "PNMH":
                 if row < 0 or row >= len(self._pnmh_row_indices):
-                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    QMessageBox.critical(self, "Lỗi", "Dữ liệu dòng bị lệch. Vui lòng tải lại dữ liệu.")
                     return
                 ws_row = self._pnmh_row_indices[row]
                 before_data = self._pnmh_original_by_ws_row.get(ws_row)
                 if before_data is None:
-                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    QMessageBox.critical(self, "Lỗi", "Dữ liệu dòng bị lệch. Vui lòng tải lại dữ liệu.")
                     return
                 after_data = self._read_pnmh_row_from_table(row)
                 image_name = self._pnmh_image_filenames[row] if row < len(self._pnmh_image_filenames) else ""
             else:
                 if row < 0 or row >= len(self._chiphi_row_indices):
-                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    QMessageBox.critical(self, "Lỗi", "Dữ liệu dòng bị lệch. Vui lòng tải lại dữ liệu.")
                     return
                 ws_row = self._chiphi_row_indices[row]
                 before_data = self._chiphi_original_by_ws_row.get(ws_row)
                 if before_data is None:
-                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    QMessageBox.critical(self, "Lỗi", "Dữ liệu dòng bị lệch. Vui lòng tải lại dữ liệu.")
                     return
                 after_data = self._read_chiphi_row_from_table(row)
                 image_name = self._chiphi_image_filenames[row] if row < len(self._chiphi_image_filenames) else ""
+
+            from PyQt5.QtWidgets import QInputDialog
+            note, ok = QInputDialog.getText(
+                self, "Báo cáo Hard Case",
+                "Ghi chú về trường hợp này (không bắt buộc):\n"
+                "VD: 'tên hàng không map được', 'đơn giá sai', 'mã vật tư nhầm'..."
+            )
+            if not ok:
+                return
 
             def _json_safe(row_data: dict) -> dict:
                 out = {}
@@ -1278,6 +1283,7 @@ class PostProcessDialog(QDialog):
                 "pnmh_file": os.path.basename(self.pnmh_path or ""),
                 "chiphi_file": os.path.basename(self.chiphi_path or ""),
                 "image_paths": copied_images,
+                "note": note.strip(),
                 "before": _json_safe(before_data),
                 "after": _json_safe(after_data),
             }
@@ -1289,52 +1295,10 @@ class PostProcessDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Thành công",
-                f"Đã lưu Hard Case:\\n{case_folder_name}"
+                f"Đã lưu Hard Case:\n{case_folder_name}"
             )
         except Exception as e:
-            QMessageBox.critical(self, "Lỗi", f"Không thể lưu Hard Case:\\n{e}")
-
-    def _do_report_ocr(self, row: int):
-        it_invoice_no = self.pnmh_table.item(row, 1)   # ui_col 1 = pnmh_col 2 (SỐ CHỨNG TỪ)
-        it_date       = self.pnmh_table.item(row, 2)   # ui_col 2 = pnmh_col 3 (NGÀY HOÁ ĐƠN)
-        it_ocr_name   = self.pnmh_table.item(row, 5)   # ui_col 5 = pnmh_col 9 (DIỄN GIẢI)
-        it_item_code  = self.pnmh_table.item(row, 7)   # ui_col 7 = pnmh_col 12 (MÃ VẬT TƯ)
-
-        invoice_no   = it_invoice_no.text().strip() if it_invoice_no else ""
-        invoice_date = it_date.text().strip()       if it_date       else ""
-        ocr_text     = it_ocr_name.text().strip()   if it_ocr_name   else ""
-        item_code    = it_item_code.text().strip()  if it_item_code  else ""
-        img_filename = (self._pnmh_image_filenames[row]
-                        if row < len(self._pnmh_image_filenames) else "")
-
-        from PyQt5.QtWidgets import QInputDialog
-        reason, ok = QInputDialog.getText(
-            self, "Báo cáo OCR khó",
-            f"Dòng: {ocr_text or '(trống)'}\n"
-            f"Chứng từ: {invoice_no}  |  Ngày: {invoice_date}\n\n"
-            f"Nhập lý do OCR khó (vd: 'chữ mờ', 'ảnh nghiêng', 'tên hàng lạ'):"
-        )
-        if not ok:
-            return
-
-        reason = reason.strip()
-
-        try:
-            from data_manager import app_data
-            app_data.save_ocr_report(
-                image_filename=img_filename,
-                invoice_no=invoice_no,
-                invoice_date=invoice_date,
-                ocr_text=ocr_text,
-                item_code=item_code,
-                reason=reason,
-            )
-            QMessageBox.information(
-                self, "Đã báo cáo",
-                f"Đã ghi nhận OCR khó:\n  '{ocr_text or img_filename}'"
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Lỗi", f"Không thể lưu báo cáo: {e}")
+            QMessageBox.critical(self, "Lỗi", f"Không thể lưu Hard Case:\n{e}")
 
     def _on_pnmh_check_changed(self):
         selected = self._get_pnmh_selected_indices()

@@ -104,6 +104,7 @@ class AdminConfigDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setStyleSheet("background: transparent;")
+        scroll.setMinimumHeight(1)  # let the footer button claim its space
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -220,6 +221,14 @@ class AdminConfigDialog(QDialog):
 
         scroll.setWidget(container)
         main_v_layout.addWidget(scroll)
+
+    def _open_hard_case_browser(self):
+        try:
+            from hard_case_browser import HardCaseBrowserDialog
+            dlg = HardCaseBrowserDialog(self)
+            dlg.exec_()
+        except Exception as exc:
+            QMessageBox.critical(self, "Lỗi", f"Không thể mở Hard Case Browser:\n{exc}")
 
     def _list_models_from_api(self):
         api_key = self.entry_api.text().strip()
