@@ -326,8 +326,8 @@ class PostProcessDialog(QDialog):
         self._chiphi_row_indices: list[int] = []
         self._deleted_chiphi_ws_rows: list[int] = []
         self._chiphi_image_filenames: list[str] = []  # col 16 from ChiPhi Excel
-        self._pnmh_rows_original: list[dict] = []
-        self._chiphi_rows_original: list[dict] = []
+        self._pnmh_original_by_ws_row: dict[int, dict] = {}
+        self._chiphi_original_by_ws_row: dict[int, dict] = {}
 
         # Image viewer state per panel (keyed by 'pnmh' and 'chiphi')
         self._img_state: dict = {
@@ -348,8 +348,6 @@ class PostProcessDialog(QDialog):
         self._build_ui()
         self._load_pnmh()
         self._load_chiphi()
-        self._pnmh_rows_original = copy.deepcopy(self._pnmh_rows)
-        self._chiphi_rows_original = copy.deepcopy(self._chiphi_rows)
         self._load_settings()  # Restore geometry/splitter after UI is built
 
     def keyPressEvent(self, event):
@@ -858,6 +856,7 @@ class PostProcessDialog(QDialog):
                 self._pnmh_image_filenames.append(str(row_vals.get(28, "") or ""))
             wb.close()
             self._populate_pnmh_table()
+            self._refresh_original_row_snapshots()
         except Exception as e:
             QMessageBox.warning(self, "Lỗi đọc PNMH", str(e))
 
@@ -946,8 +945,19 @@ class PostProcessDialog(QDialog):
                 self._chiphi_image_filenames.append(str(row_vals.get(16, "") or ""))
             wb.close()
             self._populate_chiphi_table()
+            self._refresh_original_row_snapshots()
         except Exception as e:
             QMessageBox.warning(self, "Lỗi đọc Chi phí", str(e))
+
+    def _refresh_original_row_snapshots(self):
+        self._pnmh_original_by_ws_row = {
+            ws_row: copy.deepcopy(row_data)
+            for ws_row, row_data in zip(self._pnmh_row_indices, self._pnmh_rows)
+        }
+        self._chiphi_original_by_ws_row = {
+            ws_row: copy.deepcopy(row_data)
+            for ws_row, row_data in zip(self._chiphi_row_indices, self._chiphi_rows)
+        }
 
     def _populate_chiphi_table(self):
         self.chiphi_table.setRowCount(len(self._chiphi_rows))
@@ -1206,15 +1216,27 @@ class PostProcessDialog(QDialog):
     def _collect_hard_case(self, tab_name: str, row: int):
         try:
             if tab_name == "PNMH":
+                if row < 0 or row >= len(self._pnmh_row_indices):
+                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    return
+                ws_row = self._pnmh_row_indices[row]
+                before_data = self._pnmh_original_by_ws_row.get(ws_row)
+                if before_data is None:
+                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    return
                 after_data = self._read_pnmh_row_from_table(row)
-                before_data = self._pnmh_rows_original[row] if row < len(self._pnmh_rows_original) else {}
                 image_name = self._pnmh_image_filenames[row] if row < len(self._pnmh_image_filenames) else ""
-                ws_row = self._pnmh_row_indices[row] if row < len(self._pnmh_row_indices) else None
             else:
+                if row < 0 or row >= len(self._chiphi_row_indices):
+                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    return
+                ws_row = self._chiphi_row_indices[row]
+                before_data = self._chiphi_original_by_ws_row.get(ws_row)
+                if before_data is None:
+                    QMessageBox.critical(self, "Loi", "Du lieu dong bi lech. Vui long tai lai du lieu.")
+                    return
                 after_data = self._read_chiphi_row_from_table(row)
-                before_data = self._chiphi_rows_original[row] if row < len(self._chiphi_rows_original) else {}
                 image_name = self._chiphi_image_filenames[row] if row < len(self._chiphi_image_filenames) else ""
-                ws_row = self._chiphi_row_indices[row] if row < len(self._chiphi_row_indices) else None
 
             def _json_safe(row_data: dict) -> dict:
                 out = {}

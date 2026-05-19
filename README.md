@@ -163,6 +163,12 @@ LighthouseOCR/
     └── python.exe
 ```
 
+### Hard Case modules and artifacts
+
+- `hard_case_browser.py`: dialog to browse saved hard-case reports (read-only).
+- Runtime output folder: `HARD CASE COLLECTED/`.
+- Each case is stored as: `HARD CASE COLLECTED/<timestamp>_<tab>_rN/report.json` plus copied evidence images (if any).
+
 ---
 
 ## 5. Tính năng chính
@@ -209,6 +215,13 @@ Khi OCR nhận diện sai tên hàng so với tên chuẩn trong hệ thống:
    - **ĐVT lóng**: đơn vị tính trên hóa đơn (nếu khác)
    - **Hệ số**: quy đổi từ lóng sang kho
 4. Lần sau OCR gặp tên tương tự → tự động khớp đúng mã + đơn vị
+
+### Hard Case Collection
+
+1. Trong dialog xem xét, chuột phải trên dòng PNMH hoặc Chi Phí và chọn `🚨 Báo cáo lỗi / Hard Case`.
+2. Ứng dụng lưu snapshot `before/after`, chỉ số dòng bảng + worksheet, và ảnh liên quan (nếu có) vào `HARD CASE COLLECTED/`.
+3. Từ màn hình chính, nhấn nút `🗂 Hard Cases` để mở trình duyệt report.
+4. Trình duyệt hard cases hiện tại là read-only.
 
 ---
 

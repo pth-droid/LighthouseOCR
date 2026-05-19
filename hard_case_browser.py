@@ -1,6 +1,5 @@
 ﻿import os
 import json
-import subprocess
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
@@ -11,6 +10,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QTextEdit,
     QPushButton,
+    QMessageBox,
 )
 
 from path_utils import get_root_dir
@@ -170,6 +170,6 @@ class HardCaseBrowserDialog(QDialog):
             return
         _, folder_path, _ = self._folders[row]
         try:
-            subprocess.run(["explorer", folder_path], check=False)
-        except Exception:
-            pass
+            os.startfile(folder_path)
+        except (OSError, AttributeError) as exc:
+            QMessageBox.critical(self, "Loi", f"Khong the mo thu muc:\n{exc}")
