@@ -13,8 +13,12 @@ import logging
 from datetime import date, datetime
 from typing import List, Dict, Any, Tuple
 
-import google.genai as genai
-from google.genai import types
+try:
+    import google.genai as genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -622,7 +626,44 @@ def _score_candidate(
 
 import re
 import unicodedata
-from rapidfuzz import fuzz, process as rfprocess
+try:
+    from rapidfuzz import fuzz, process as rfprocess
+except ImportError:
+    class _FuzzFallback:
+        @staticmethod
+        def ratio(a: str, b: str) -> float:
+            return difflib.SequenceMatcher(None, str(a), str(b)).ratio() * 100
+
+        @staticmethod
+        def token_set_ratio(a: str, b: str) -> float:
+            ta = set(str(a).split())
+            tb = set(str(b).split())
+            if not ta and not tb:
+                return 100.0
+            if not ta or not tb:
+                return 0.0
+            inter = " ".join(sorted(ta & tb))
+            aa = " ".join(sorted(ta))
+            bb = " ".join(sorted(tb))
+            return max(
+                difflib.SequenceMatcher(None, inter, aa).ratio(),
+                difflib.SequenceMatcher(None, inter, bb).ratio(),
+                difflib.SequenceMatcher(None, aa, bb).ratio(),
+            ) * 100
+
+    class _RFProcessFallback:
+        @staticmethod
+        def extract(query, choices, scorer, score_cutoff=0, limit=5):
+            scored = []
+            for idx, choice in enumerate(choices):
+                score = scorer(query, choice)
+                if score >= score_cutoff:
+                    scored.append((choice, score, idx))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            return scored[:limit]
+
+    fuzz = _FuzzFallback()
+    rfprocess = _RFProcessFallback()
 
 
 def _clean_ocr_name(raw: str) -> str:
@@ -875,6 +916,10 @@ Trả về JSON thuần (KHÔNG markdown):
     "tên hoá đơn 2": ""
 }}
 """
+    if genai is None or types is None:
+        raise RuntimeError(
+            "google-genai SDK is not installed. Install dependency 'google-genai' to use LLM remap."
+        )
     client = genai.Client(api_key=api_key)
     models_to_try = [
         (data_store.models.get("light_primary"), True),

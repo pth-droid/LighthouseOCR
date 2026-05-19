@@ -2,8 +2,12 @@ import json
 import ast
 import random
 import time
-from google.genai import types
-from google.genai.errors import APIError
+try:
+    from google.genai import types
+    from google.genai.errors import APIError
+except ImportError:
+    types = None
+    APIError = Exception
 
 from core_rate_limiter import global_rate_limiter, EngineCancellationError
 
@@ -54,7 +58,7 @@ def generate_with_fallback(
                     status_callback(f"🔁 Thử lại lần {attempt} với {model_label}...")
 
                 config = None
-                if data_store.should_use_minimal_thinking(model_name, is_primary=model_cfg["is_primary"]):
+                if types is not None and data_store.should_use_minimal_thinking(model_name, is_primary=model_cfg["is_primary"]):
                     config = types.GenerateContentConfig(
                         thinking_config=types.ThinkingConfig(thinking_budget=0)
                     )
