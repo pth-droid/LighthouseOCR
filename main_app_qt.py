@@ -1097,6 +1097,13 @@ class LighthouseOCRApp(QMainWindow):
         self.btn_edit_alias.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_edit_alias.clicked.connect(self._open_alias_editor)
         mg_buttons_layout.addWidget(self.btn_edit_alias, 1)
+
+        self.btn_hard_cases = QPushButton("🗂 Hard Cases")
+        self.btn_hard_cases.setObjectName("btn_open_output")
+        self.btn_hard_cases.setToolTip("Xem danh sách hard cases đã được thu thập")
+        self.btn_hard_cases.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.btn_hard_cases.clicked.connect(self._open_hard_cases)
+        mg_buttons_layout.addWidget(self.btn_hard_cases, 1)
         
         mg_buttons_layout.addStretch()
         mg_layout.addLayout(mg_buttons_layout)
@@ -1239,6 +1246,14 @@ class LighthouseOCRApp(QMainWindow):
             dlg.exec_()
         except Exception as e:
             self._show_error("Lỗi", f"Không thể mở trình chỉnh sửa Alias:\n{e}")
+
+    def _open_hard_cases(self):
+        try:
+            from hard_case_browser import HardCaseBrowserDialog
+            dlg = HardCaseBrowserDialog(self)
+            dlg.exec_()
+        except Exception as e:
+            self._show_error("Lỗi", f"Không thể mở danh sách Hard Cases:\n{e}")
 
     def _run_preflight_validation(self, show_dialog: bool = False) -> bool:
         try:

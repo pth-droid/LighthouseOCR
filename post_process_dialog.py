@@ -1,6 +1,8 @@
 import os
 import sys
 import shutil
+import copy
+import json
 from PIL import Image as PilImage
 import openpyxl
 import datetime
@@ -324,6 +326,8 @@ class PostProcessDialog(QDialog):
         self._chiphi_row_indices: list[int] = []
         self._deleted_chiphi_ws_rows: list[int] = []
         self._chiphi_image_filenames: list[str] = []  # col 16 from ChiPhi Excel
+        self._pnmh_rows_original: list[dict] = []
+        self._chiphi_rows_original: list[dict] = []
 
         # Image viewer state per panel (keyed by 'pnmh' and 'chiphi')
         self._img_state: dict = {
@@ -344,6 +348,8 @@ class PostProcessDialog(QDialog):
         self._build_ui()
         self._load_pnmh()
         self._load_chiphi()
+        self._pnmh_rows_original = copy.deepcopy(self._pnmh_rows)
+        self._chiphi_rows_original = copy.deepcopy(self._chiphi_rows)
         self._load_settings()  # Restore geometry/splitter after UI is built
 
     def keyPressEvent(self, event):
@@ -796,6 +802,8 @@ class PostProcessDialog(QDialog):
         self.chiphi_table.setItemDelegateForColumn(4, ComboBoxDelegate(item_list, self.chiphi_table))
 
         self.chiphi_table.cellChanged.connect(self._on_chiphi_cell_changed)
+        self.chiphi_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.chiphi_table.customContextMenuRequested.connect(self._show_chiphi_context_menu)
         self.chiphi_table.selectionModel().selectionChanged.connect(self._on_chiphi_selection_changed)
 
         self._setup_table_style(self.chiphi_table)
@@ -1089,19 +1097,41 @@ class PostProcessDialog(QDialog):
     def _show_pnmh_context_menu(self, pos):
         from PyQt5.QtWidgets import QMenu
         index = self.pnmh_table.indexAt(pos)
-        if not index.isValid(): return
-        
+        if not index.isValid():
+            return
+
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu { background-color: #0A2740; color: #BDD8E9; border: 1px solid #49769F; }
             QMenu::item:selected { background-color: #0A4174; color: #ffffff; }
         """)
-        
+
         row = index.row()
         act_alias = menu.addAction("📝  Lưu vào Từ điển Alias")
         act_alias.triggered.connect(lambda: self._do_update_alias(row))
-        
+        menu.addSeparator()
+        act_hard_case = menu.addAction("🚨  Báo cáo lỗi / Hard Case")
+        act_hard_case.triggered.connect(lambda: self._collect_hard_case("PNMH", row))
+
         menu.exec_(self.pnmh_table.viewport().mapToGlobal(pos))
+
+    def _show_chiphi_context_menu(self, pos):
+        from PyQt5.QtWidgets import QMenu
+        index = self.chiphi_table.indexAt(pos)
+        if not index.isValid():
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background-color: #0A2740; color: #BDD8E9; border: 1px solid #49769F; }
+            QMenu::item:selected { background-color: #0A4174; color: #ffffff; }
+        """)
+
+        row = index.row()
+        act_hard_case = menu.addAction("🚨  Báo cáo lỗi / Hard Case")
+        act_hard_case.triggered.connect(lambda: self._collect_hard_case("ChiPhi", row))
+
+        menu.exec_(self.chiphi_table.viewport().mapToGlobal(pos))
 
     def _do_update_alias(self, row):
         it_ocr_name = self.pnmh_table.item(row, 5)
@@ -1172,6 +1202,71 @@ class PostProcessDialog(QDialog):
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Lỗi", f"Không thể lưu alias: {e}")
+
+    def _collect_hard_case(self, tab_name: str, row: int):
+        try:
+            if tab_name == "PNMH":
+                after_data = self._read_pnmh_row_from_table(row)
+                before_data = self._pnmh_rows_original[row] if row < len(self._pnmh_rows_original) else {}
+                image_name = self._pnmh_image_filenames[row] if row < len(self._pnmh_image_filenames) else ""
+                ws_row = self._pnmh_row_indices[row] if row < len(self._pnmh_row_indices) else None
+            else:
+                after_data = self._read_chiphi_row_from_table(row)
+                before_data = self._chiphi_rows_original[row] if row < len(self._chiphi_rows_original) else {}
+                image_name = self._chiphi_image_filenames[row] if row < len(self._chiphi_image_filenames) else ""
+                ws_row = self._chiphi_row_indices[row] if row < len(self._chiphi_row_indices) else None
+
+            def _json_safe(row_data: dict) -> dict:
+                out = {}
+                for key, value in row_data.items():
+                    out[str(key)] = value.isoformat() if hasattr(value, "isoformat") else value
+                return out
+
+            hard_case_root = os.path.join(get_root_dir(), "HARD CASE COLLECTED")
+            os.makedirs(hard_case_root, exist_ok=True)
+
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            case_folder_name = f"{ts}_{tab_name.lower()}_r{row + 1}"
+            case_dir = os.path.join(hard_case_root, case_folder_name)
+            os.makedirs(case_dir, exist_ok=True)
+
+            copied_images: list[str] = []
+            if image_name:
+                src_path = os.path.join(os.path.dirname(self.pnmh_path), image_name)
+                if os.path.exists(src_path):
+                    local_name = os.path.basename(image_name)
+                    dst_path = os.path.join(case_dir, local_name)
+                    if os.path.exists(dst_path):
+                        stem, ext = os.path.splitext(local_name)
+                        local_name = f"{stem}_{ts}{ext}"
+                        dst_path = os.path.join(case_dir, local_name)
+                    shutil.copy2(src_path, dst_path)
+                    copied_images.append(local_name)
+
+            report = {
+                "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "tab": tab_name,
+                "table_row_index_0_based": row,
+                "table_row_index_1_based": row + 1,
+                "worksheet_row_index": ws_row,
+                "pnmh_file": os.path.basename(self.pnmh_path or ""),
+                "chiphi_file": os.path.basename(self.chiphi_path or ""),
+                "image_paths": copied_images,
+                "before": _json_safe(before_data),
+                "after": _json_safe(after_data),
+            }
+
+            report_path = os.path.join(case_dir, "report.json")
+            with open(report_path, "w", encoding="utf-8") as f:
+                json.dump(report, f, ensure_ascii=False, indent=2)
+
+            QMessageBox.information(
+                self,
+                "Thành công",
+                f"Đã lưu Hard Case:\\n{case_folder_name}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi", f"Không thể lưu Hard Case:\\n{e}")
 
     def _on_pnmh_check_changed(self):
         selected = self._get_pnmh_selected_indices()
