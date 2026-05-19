@@ -14,6 +14,7 @@ _SUPPLIER_FILE   = os.path.join(_DATA_DIR, "Danh sach nha cung cap.xlsx")
 _INGREDIENT_FILE = os.path.join(_DATA_DIR, "Danh mục vật tư, hàng hoá.xlsx")
 _KHO_FILE        = os.path.join(_DATA_DIR, "Danh sach kho.xlsx")
 _DEFAULT_ALIAS_FILE = os.path.join(_DATA_DIR, "Tu_dien_alias.csv")  # module-level fallback only
+_OCR_REPORT_FILE    = os.path.join(_DATA_DIR, "OCR_Difficult_Reports.csv")
 
 # Schema constants for new ingredient file (Danh mục vật tư, hàng hoá.xlsx)
 # Row 1-4: Công ty, tiêu đề | Row 5: Column headers | Row 6+: Data
@@ -354,6 +355,31 @@ class DataManager:
             logging.info(f"[DataManager] Đã lưu alias: '{alias}' -> Mã: '{code}' (Master Unit: '{master_unit}', Slang Unit: '{alias_unit}', Factor: {alias_factor})")
         except Exception as e:
             logging.error(f"[DataManager] Lỗi ghi file alias: {e}")
+
+    def save_ocr_report(self, image_filename: str, invoice_no: str, invoice_date: str,
+                        ocr_text: str, item_code: str, reason: str):
+        """Lưu một record OCR khó vào OCR_Difficult_Reports.csv (append-only)."""
+        import csv, datetime as _dt
+        report_file = _OCR_REPORT_FILE
+        file_exists = os.path.isfile(report_file)
+        try:
+            if not file_exists:
+                os.makedirs(os.path.dirname(report_file), exist_ok=True)
+                with open(report_file, mode='w', encoding='utf-8', newline='') as f:
+                    csv.writer(f).writerow([
+                        'Timestamp', 'Image', 'Số chứng từ', 'Ngày hóa đơn',
+                        'Diễn giải (OCR)', 'Mã vật tư', 'Lý do khó'
+                    ])
+            with open(report_file, mode='a', encoding='utf-8', newline='') as f:
+                csv.writer(f).writerow([
+                    _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    image_filename, invoice_no, invoice_date,
+                    ocr_text, item_code, reason
+                ])
+            logging.info(f"[DataManager] Đã lưu OCR report: '{ocr_text}' ({image_filename})")
+        except Exception as e:
+            logging.error(f"[DataManager] Lỗi ghi OCR report: {e}")
+            raise
 
     def _parse_suppliers(self):
         import openpyxl

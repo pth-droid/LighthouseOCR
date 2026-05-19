@@ -1123,6 +1123,10 @@ class PostProcessDialog(QDialog):
         act_hard_case = menu.addAction("🚨  Báo cáo lỗi / Hard Case")
         act_hard_case.triggered.connect(lambda: self._collect_hard_case("PNMH", row))
 
+        menu.addSeparator()
+        act_report = menu.addAction("🚩  Báo cáo OCR khó")
+        act_report.triggered.connect(lambda: self._do_report_ocr(row))
+
         menu.exec_(self.pnmh_table.viewport().mapToGlobal(pos))
 
     def _show_chiphi_context_menu(self, pos):
@@ -1289,6 +1293,48 @@ class PostProcessDialog(QDialog):
             )
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", f"Không thể lưu Hard Case:\\n{e}")
+
+    def _do_report_ocr(self, row: int):
+        it_invoice_no = self.pnmh_table.item(row, 1)   # ui_col 1 = pnmh_col 2 (SỐ CHỨNG TỪ)
+        it_date       = self.pnmh_table.item(row, 2)   # ui_col 2 = pnmh_col 3 (NGÀY HOÁ ĐƠN)
+        it_ocr_name   = self.pnmh_table.item(row, 5)   # ui_col 5 = pnmh_col 9 (DIỄN GIẢI)
+        it_item_code  = self.pnmh_table.item(row, 7)   # ui_col 7 = pnmh_col 12 (MÃ VẬT TƯ)
+
+        invoice_no   = it_invoice_no.text().strip() if it_invoice_no else ""
+        invoice_date = it_date.text().strip()       if it_date       else ""
+        ocr_text     = it_ocr_name.text().strip()   if it_ocr_name   else ""
+        item_code    = it_item_code.text().strip()  if it_item_code  else ""
+        img_filename = (self._pnmh_image_filenames[row]
+                        if row < len(self._pnmh_image_filenames) else "")
+
+        from PyQt5.QtWidgets import QInputDialog
+        reason, ok = QInputDialog.getText(
+            self, "Báo cáo OCR khó",
+            f"Dòng: {ocr_text or '(trống)'}\n"
+            f"Chứng từ: {invoice_no}  |  Ngày: {invoice_date}\n\n"
+            f"Nhập lý do OCR khó (vd: 'chữ mờ', 'ảnh nghiêng', 'tên hàng lạ'):"
+        )
+        if not ok:
+            return
+
+        reason = reason.strip()
+
+        try:
+            from data_manager import app_data
+            app_data.save_ocr_report(
+                image_filename=img_filename,
+                invoice_no=invoice_no,
+                invoice_date=invoice_date,
+                ocr_text=ocr_text,
+                item_code=item_code,
+                reason=reason,
+            )
+            QMessageBox.information(
+                self, "Đã báo cáo",
+                f"Đã ghi nhận OCR khó:\n  '{ocr_text or img_filename}'"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi", f"Không thể lưu báo cáo: {e}")
 
     def _on_pnmh_check_changed(self):
         selected = self._get_pnmh_selected_indices()
