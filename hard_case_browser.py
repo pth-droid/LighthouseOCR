@@ -1,38 +1,49 @@
 import os
 import json
+import re
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QHeaderView, QScrollArea, QFrame, QWidget, QAbstractItemView,
+    QHeaderView, QScrollArea, QFrame, QWidget, QAbstractItemView, QTabWidget,
 )
 from PyQt5.QtCore import Qt, QEvent
 from PyQt5.QtGui import QColor, QPixmap, QTransform
 
 from path_utils import get_root_dir
 
-# Columns used as the display schema (PNMH primary; ChiPhi data slots in by key number)
-_COLS = [
-    (2,  "SỐ CT / NGÀY"),
-    (3,  "NGÀY / SỐ CT"),
-    (4,  "BỘ PHẬN (CP)"),
+# ── Column schemas ─────────────────────────────────────────────────────────────
+_PNMH_COLS = [
+    (2,  "SỐ CHỨNG TỪ"),
+    (3,  "NGÀY HOÁ ĐƠN"),
     (6,  "BỘ PHẬN"),
-    (7,  "MÃ ĐỐI TƯỢNG"),
     (8,  "ĐỐI TƯỢNG"),
-    (9,  "DIỄN GIẢI / TK NỢ"),
-    (10, "TK CÓ"),
+    (9,  "DIỄN GIẢI"),
     (11, "KHO NHẬP"),
     (12, "MÃ VẬT TƯ"),
     (13, "ĐVT"),
-    (14, "TIỀN (CP)"),
-    (15, "GHI CHÚ (CP)"),
     (16, "SỐ LƯỢNG"),
     (17, "ĐƠN GIÁ"),
     (20, "THÀNH TIỀN"),
     (27, "GHI CHÚ"),
 ]
+_PNMH_MONEY = {17, 20}
 
+_CHIPHI_COLS = [
+    (2,  "NGÀY GHI SỔ"),
+    (3,  "SỐ CHỨNG TỪ"),
+    (4,  "BỘ PHẬN"),
+    (7,  "MÃ ĐỐI TƯỢNG"),
+    (8,  "DIỄN GIẢI"),
+    (9,  "TK NỢ"),
+    (10, "TK CÓ"),
+    (14, "THÀNH TIỀN"),
+    (15, "GHI CHÚ"),
+]
+_CHIPHI_MONEY = {14}
+
+# ── Colors ─────────────────────────────────────────────────────────────────────
 _C_TEXT    = QColor("#BDD8E9")
 _C_CHG_BFG = QColor("#E8A87F")
 _C_CHG_BBG = QColor("#3A1A0A")
@@ -41,7 +52,7 @@ _C_CHG_ABG = QColor("#0A2A0A")
 _C_ROW0_BG = QColor("#0A1828")
 _C_ROW1_BG = QColor("#081408")
 
-_MONEY_COLS = {14, 17, 20}  # col numbers that should use accounting format
+_IMG_EXTS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
 
 
 def _fmt_accounting(val: str) -> str:
@@ -51,18 +62,9 @@ def _fmt_accounting(val: str) -> str:
         return val
 
 
-def _fmt_case_label(folder_name: str, mtime: float) -> str:
-    parts = folder_name.split("_")
-    dt = datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
-    tab = parts[-2].upper() if len(parts) >= 2 else "?"
-    row = parts[-1] if len(parts) >= 1 else "?"
-    return f"{tab} · {row}   {dt}"
-
-
 class HardCaseBrowserDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Enable maximize button
         self.setWindowFlags(
             self.windowFlags()
             | Qt.WindowMaximizeButtonHint
@@ -70,7 +72,8 @@ class HardCaseBrowserDialog(QDialog):
         )
 
         self._root_dir = os.path.join(get_root_dir(), "HARD CASE COLLECTED")
-        self._row_case_map: dict[int, tuple] = {}  # table_row -> (folder_path, images)
+        self._pnmh_row_map:   dict[int, tuple] = {}  # row -> (folder_path, images, report)
+        self._chiphi_row_map: dict[int, tuple] = {}
         self._original_pixmap  = None
         self._zoom_factor      = 1.0
         self._current_rotation = 0
@@ -85,7 +88,7 @@ class HardCaseBrowserDialog(QDialog):
         self._build_ui()
         self._load_all_cases()
 
-    # ── Style ──────────────────────────────────
+    # ── Style ──────────────────────────────────────────────────────────────────
     def _stylesheet(self) -> str:
         return """
             QDialog {
@@ -110,22 +113,33 @@ class HardCaseBrowserDialog(QDialog):
                 font-weight: 700;
                 font-size: 12px;
             }
-            QPushButton {
-                background-color: #0A4174;
-                color: #BDD8E9;
-                border: 1px solid rgba(123,189,232,0.35);
-                border-radius: 8px;
-                padding: 7px 12px;
+            QTabWidget::pane {
+                border: 1px solid rgba(123,189,232,0.22);
+                border-radius: 4px;
+                background: transparent;
+            }
+            QTabBar::tab {
+                background: rgba(0,29,57,0.6); color: #6EA2B3;
+                border: 1px solid rgba(123,189,232,0.2);
+                border-bottom-color: transparent;
+                padding: 6px 16px; margin-right: 2px;
+                border-top-left-radius: 4px; border-top-right-radius: 4px;
                 font-size: 13px;
-                font-weight: 600;
-                min-width: 100px;
+            }
+            QTabBar::tab:selected { background: #0A4174; color: #ffffff;
+                border-color: rgba(123,189,232,0.5); }
+            QPushButton {
+                background-color: #0A4174; color: #BDD8E9;
+                border: 1px solid rgba(123,189,232,0.35);
+                border-radius: 8px; padding: 7px 12px;
+                font-size: 13px; font-weight: 600; min-width: 100px;
             }
             QPushButton:hover  { background-color: #0F548E; }
             QPushButton:pressed{ background-color: #08345C; }
             QSplitter::handle  { background: rgba(123,189,232,0.15); border-radius: 3px; }
         """
 
-    # ── Layout ─────────────────────────────────
+    # ── Layout ─────────────────────────────────────────────────────────────────
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -135,7 +149,7 @@ class HardCaseBrowserDialog(QDialog):
         title.setStyleSheet("font-size:14px; font-weight:700; color:#BDD8E9;")
         root.addWidget(title)
 
-        # Status bar: left=note/reason, right=selected cell content
+        # Status bar: left=note, right=clicked cell content
         status_w = QWidget()
         status_w.setFixedHeight(28)
         status_w.setStyleSheet(
@@ -160,35 +174,36 @@ class HardCaseBrowserDialog(QDialog):
         sl.addWidget(self.lbl_cell, 1)
         root.addWidget(status_w)
 
-        # Single horizontal splitter: table | image viewer (mirrors PostProcessDialog)
+        # Main splitter: left=tables, right=image viewer
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(5)
         splitter.setStyleSheet(
             "QSplitter::handle { background: rgba(123,189,232,0.15); border-radius:3px; }"
         )
 
-        # Data table
-        self.table = QTableWidget()
-        self.table.setColumnCount(len(_COLS) + 1)  # +1 for row-label column
-        headers = [""] + [lbl for _, lbl in _COLS]
-        self.table.setHorizontalHeaderLabels(headers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for c in range(1, len(_COLS) + 1):
-            self.table.horizontalHeader().setSectionResizeMode(c, QHeaderView.Interactive)
-        self.table.horizontalHeader().setDefaultSectionSize(110)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setRowCount(0)
-        self.table.currentCellChanged.connect(self._on_cell_changed)
-        splitter.addWidget(self.table)
+        # Left: tab widget with separate PNMH and ChiPhi tables
+        self.left_tabs = QTabWidget()
 
-        # Image panel
+        self.pnmh_table = self._make_table(_PNMH_COLS)
+        self.pnmh_table.currentCellChanged.connect(
+            lambda r, c, pr, _pc: self._on_cell_changed(
+                self.pnmh_table, self._pnmh_row_map, r, c, pr
+            )
+        )
+
+        self.chiphi_table = self._make_table(_CHIPHI_COLS)
+        self.chiphi_table.currentCellChanged.connect(
+            lambda r, c, pr, _pc: self._on_cell_changed(
+                self.chiphi_table, self._chiphi_row_map, r, c, pr
+            )
+        )
+
+        self.left_tabs.addTab(self.pnmh_table,   "📁 PNMH (0)")
+        self.left_tabs.addTab(self.chiphi_table,  "📁 Chi phí (0)")
+        splitter.addWidget(self.left_tabs)
+
         splitter.addWidget(self._build_image_panel())
         splitter.setSizes([880, 420])
-
         root.addWidget(splitter, 1)
 
         # Footer
@@ -203,6 +218,21 @@ class HardCaseBrowserDialog(QDialog):
             b.clicked.connect(slot)
             footer.addWidget(b)
         root.addLayout(footer)
+
+    def _make_table(self, cols) -> QTableWidget:
+        t = QTableWidget()
+        t.setColumnCount(len(cols) + 1)
+        t.setHorizontalHeaderLabels([""] + [lbl for _, lbl in cols])
+        t.verticalHeader().setVisible(False)
+        t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        t.setSelectionBehavior(QAbstractItemView.SelectItems)
+        t.setSelectionMode(QAbstractItemView.SingleSelection)
+        t.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        for c in range(1, len(cols) + 1):
+            t.horizontalHeader().setSectionResizeMode(c, QHeaderView.Interactive)
+        t.horizontalHeader().setDefaultSectionSize(110)
+        t.horizontalHeader().setStretchLastSection(True)
+        return t
 
     def _build_image_panel(self) -> QWidget:
         panel = QWidget()
@@ -248,10 +278,12 @@ class HardCaseBrowserDialog(QDialog):
         pl.addWidget(self.img_scroll, 1)
         return panel
 
-    # ── Load all cases ──────────────────────────
+    # ── Load cases ─────────────────────────────────────────────────────────────
     def _load_all_cases(self):
-        self.table.setRowCount(0)
-        self._row_case_map.clear()
+        self.pnmh_table.setRowCount(0)
+        self.chiphi_table.setRowCount(0)
+        self._pnmh_row_map.clear()
+        self._chiphi_row_map.clear()
         self._clear_image()
         self.lbl_note.setText("—")
         self.lbl_cell.setText("")
@@ -259,47 +291,72 @@ class HardCaseBrowserDialog(QDialog):
         if not os.path.isdir(self._root_dir):
             return
 
-        folders = []
-        for name in os.listdir(self._root_dir):
-            path = os.path.join(self._root_dir, name)
-            if os.path.isdir(path):
-                folders.append((name, path, os.path.getmtime(path)))
-        folders.sort(key=lambda x: x[2], reverse=True)
-        self._folders = folders
-
-        for name, folder_path, mtime in folders:
-            report_path = os.path.join(folder_path, "report.json")
-            if not os.path.isfile(report_path):
+        # Collect cases from date folders (YYYYMMDD/)
+        all_cases = []
+        for date_folder in os.listdir(self._root_dir):
+            if not re.match(r'^\d{8}$', date_folder):
                 continue
-            try:
-                with open(report_path, "r", encoding="utf-8") as f:
-                    report = json.load(f)
-            except Exception:
+            date_path = os.path.join(self._root_dir, date_folder)
+            if not os.path.isdir(date_path):
                 continue
-            self._append_case_rows(report, folder_path, name, mtime)
+            for fname in os.listdir(date_path):
+                if not fname.endswith('.json'):
+                    continue
+                json_path = os.path.join(date_path, fname)
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        report = json.load(f)
+                except Exception:
+                    continue
+                # Image: same stem as JSON, any image extension
+                stem = os.path.splitext(fname)[0]
+                images = []
+                for ext in _IMG_EXTS:
+                    if os.path.isfile(os.path.join(date_path, stem + ext)):
+                        images.append(stem + ext)
+                        break
+                all_cases.append((date_path, images, report))
 
-        if self.table.rowCount() > 0:
-            self.table.selectRow(0)
+        all_cases.sort(key=lambda x: x[2].get("created_at", ""), reverse=True)
 
-    def _append_case_rows(self, report: dict, folder_path: str, name: str, mtime: float):
-        before  = report.get("before", {})
-        after   = report.get("after",  {})
-        tab     = report.get("tab", "PNMH")
-        images  = report.get("image_paths", [])
-        note    = report.get("note", "")
-        created = report.get("created_at", "")
-        row_n   = report.get("table_row_index_1_based", "?")
-        dt      = datetime.fromisoformat(created).strftime("%d/%m %H:%M") if created else datetime.fromtimestamp(mtime).strftime("%d/%m %H:%M")
+        pnmh_n = chiphi_n = 0
+        for folder_path, images, report in all_cases:
+            if report.get("tab") == "ChiPhi":
+                self._append_rows(
+                    self.chiphi_table, self._chiphi_row_map,
+                    _CHIPHI_COLS, _CHIPHI_MONEY,
+                    folder_path, images, report,
+                )
+                chiphi_n += 1
+            else:
+                self._append_rows(
+                    self.pnmh_table, self._pnmh_row_map,
+                    _PNMH_COLS, _PNMH_MONEY,
+                    folder_path, images, report,
+                )
+                pnmh_n += 1
 
-        base_row = self.table.rowCount()
-        self.table.insertRow(base_row)
-        self.table.insertRow(base_row + 1)
-        self.table.setRowHeight(base_row,     28)
-        self.table.setRowHeight(base_row + 1, 28)
+        self.left_tabs.setTabText(0, f"📁 PNMH ({pnmh_n})")
+        self.left_tabs.setTabText(1, f"📁 Chi phí ({chiphi_n})")
 
-        # Register both rows → (folder_path, images, report)
-        self._row_case_map[base_row]     = (folder_path, images, report)
-        self._row_case_map[base_row + 1] = (folder_path, images, report)
+        if self.pnmh_table.rowCount() > 0:
+            self.pnmh_table.setCurrentCell(0, 0)
+        elif self.chiphi_table.rowCount() > 0:
+            self.left_tabs.setCurrentIndex(1)
+            self.chiphi_table.setCurrentCell(0, 0)
+
+    def _append_rows(self, table, row_map, cols, money_cols, folder_path, images, report):
+        before = report.get("before", {})
+        after  = report.get("after",  {})
+
+        base_row = table.rowCount()
+        table.insertRow(base_row)
+        table.insertRow(base_row + 1)
+        table.setRowHeight(base_row,     28)
+        table.setRowHeight(base_row + 1, 28)
+
+        row_map[base_row]     = (folder_path, images, report)
+        row_map[base_row + 1] = (folder_path, images, report)
 
         def _cell(text, fg, bg):
             it = QTableWidgetItem(text)
@@ -308,16 +365,15 @@ class HardCaseBrowserDialog(QDialog):
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             return it
 
-        self.table.setItem(base_row,     0, _cell("📋", QColor("#7BBDE8"), _C_ROW0_BG))
-        self.table.setItem(base_row + 1, 0, _cell("✏️", QColor("#7FD47F"), _C_ROW1_BG))
+        table.setItem(base_row,     0, _cell("📋", QColor("#7BBDE8"), _C_ROW0_BG))
+        table.setItem(base_row + 1, 0, _cell("✏️", QColor("#7FD47F"), _C_ROW1_BG))
 
-        # Data cells
-        for c_idx, (col_num, _) in enumerate(_COLS, start=1):
-            key      = str(col_num)
-            b_raw    = str(before.get(key, "") or "")
-            a_raw    = str(after.get(key,  "") or "")
+        for c_idx, (col_num, _) in enumerate(cols, start=1):
+            key     = str(col_num)
+            b_raw   = str(before.get(key, "") or "")
+            a_raw   = str(after.get(key,  "") or "")
             changed  = b_raw != a_raw
-            is_money = col_num in _MONEY_COLS
+            is_money = col_num in money_cols
 
             b_disp = _fmt_accounting(b_raw) if is_money and b_raw else b_raw
             a_disp = _fmt_accounting(a_raw) if is_money and a_raw else a_raw
@@ -328,29 +384,26 @@ class HardCaseBrowserDialog(QDialog):
             a_it = _cell(a_disp,
                          _C_CHG_AFG if changed else _C_TEXT,
                          _C_CHG_ABG if changed else _C_ROW1_BG)
-            self.table.setItem(base_row,     c_idx, b_it)
-            self.table.setItem(base_row + 1, c_idx, a_it)
+            table.setItem(base_row,     c_idx, b_it)
+            table.setItem(base_row + 1, c_idx, a_it)
 
-    # ── Cell selection → status bar + image ────
-    def _on_cell_changed(self, cur_row, cur_col, prev_row, _prev_col):
+    # ── Cell selection ─────────────────────────────────────────────────────────
+    def _on_cell_changed(self, table, row_map, cur_row, cur_col, prev_row):
         if cur_row < 0:
             return
 
-        # Right side: full text of the clicked cell
-        item = self.table.item(cur_row, cur_col)
+        item = table.item(cur_row, cur_col)
         self.lbl_cell.setText(item.text() if item else "")
 
-        case = self._row_case_map.get(cur_row)
+        case = row_map.get(cur_row)
         if not case:
             return
         folder_path, images, report = case
 
-        # Skip image/note update when still on the same case (only column moved)
-        prev_case = self._row_case_map.get(prev_row) if prev_row >= 0 else None
+        prev_case = row_map.get(prev_row) if prev_row >= 0 else None
         if prev_case and prev_case[0] == folder_path:
             return
 
-        # Left side: note/reason the user wrote when reporting this case
         note = report.get("note", "")
         self.lbl_note.setText(note if note else "—")
 
@@ -364,17 +417,18 @@ class HardCaseBrowserDialog(QDialog):
         self._clear_image()
 
     def _open_current_folder(self):
-        row = self.table.currentRow()
-        case = self._row_case_map.get(row)
+        idx     = self.left_tabs.currentIndex()
+        row_map = self._pnmh_row_map if idx == 0 else self._chiphi_row_map
+        table   = self.pnmh_table    if idx == 0 else self.chiphi_table
+        case = row_map.get(table.currentRow())
         if not case:
             return
-        folder_path = case[0]
         try:
-            os.startfile(folder_path)
+            os.startfile(case[0])
         except (OSError, AttributeError) as exc:
             QMessageBox.critical(self, "Lỗi", f"Không thể mở thư mục:\n{exc}")
 
-    # ── Image ──────────────────────────────────
+    # ── Image viewer ───────────────────────────────────────────────────────────
     def _load_image(self, path: str):
         pix = QPixmap(path)
         if pix.isNull():

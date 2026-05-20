@@ -1292,28 +1292,24 @@ class PostProcessDialog(QDialog):
                 return out
 
             hard_case_root = os.path.join(get_root_dir(), "HARD CASE COLLECTED")
-            os.makedirs(hard_case_root, exist_ok=True)
+            now      = datetime.datetime.now()
+            date_dir = os.path.join(hard_case_root, now.strftime("%Y%m%d"))
+            os.makedirs(date_dir, exist_ok=True)
 
-            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            case_folder_name = f"{ts}_{tab_name.lower()}_r{row + 1}"
-            case_dir = os.path.join(hard_case_root, case_folder_name)
-            os.makedirs(case_dir, exist_ok=True)
+            ts        = now.strftime("%Y%m%d_%H%M%S")
+            base_name = f"{ts}_{tab_name.lower()}_r{row + 1}"
 
             copied_images: list[str] = []
             if image_name:
                 src_path = os.path.join(os.path.dirname(self.pnmh_path), image_name)
                 if os.path.exists(src_path):
-                    local_name = os.path.basename(image_name)
-                    dst_path = os.path.join(case_dir, local_name)
-                    if os.path.exists(dst_path):
-                        stem, ext = os.path.splitext(local_name)
-                        local_name = f"{stem}_{ts}{ext}"
-                        dst_path = os.path.join(case_dir, local_name)
-                    shutil.copy2(src_path, dst_path)
-                    copied_images.append(local_name)
+                    ext      = os.path.splitext(image_name)[1].lower()
+                    img_name = f"{base_name}{ext}"
+                    shutil.copy2(src_path, os.path.join(date_dir, img_name))
+                    copied_images.append(img_name)
 
             report = {
-                "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "created_at": now.isoformat(timespec="seconds"),
                 "tab": tab_name,
                 "table_row_index_0_based": row,
                 "table_row_index_1_based": row + 1,
@@ -1326,14 +1322,13 @@ class PostProcessDialog(QDialog):
                 "after": _json_safe(after_data),
             }
 
-            report_path = os.path.join(case_dir, "report.json")
-            with open(report_path, "w", encoding="utf-8") as f:
+            with open(os.path.join(date_dir, f"{base_name}.json"), "w", encoding="utf-8") as f:
                 json.dump(report, f, ensure_ascii=False, indent=2)
 
             QMessageBox.information(
                 self,
                 "Thành công",
-                f"Đã lưu Hard Case:\n{case_folder_name}"
+                f"Đã lưu Hard Case:\n{base_name}"
             )
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", f"Không thể lưu Hard Case:\n{e}")
