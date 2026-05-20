@@ -80,6 +80,7 @@ class HardCaseBrowserDialog(QDialog):
 
         self.setWindowTitle("Xem Hard Cases đã thu thập")
         self.resize(1300, 750)
+        self.setWindowState(Qt.WindowMaximized)
         self.setStyleSheet(self._stylesheet())
         self._build_ui()
         self._load_all_cases()
@@ -134,15 +135,30 @@ class HardCaseBrowserDialog(QDialog):
         title.setStyleSheet("font-size:14px; font-weight:700; color:#BDD8E9;")
         root.addWidget(title)
 
-        # Status bar showing selected case metadata
-        self.lbl_info = QLabel("—")
-        self.lbl_info.setStyleSheet(
-            "color:#7BBDE8; font-size:12px; padding:4px 8px;"
-            " background:rgba(10,39,64,0.6); border-radius:4px;"
-            " border:1px solid rgba(123,189,232,0.15);"
+        # Status bar: left=note/reason, right=selected cell content
+        status_w = QWidget()
+        status_w.setFixedHeight(28)
+        status_w.setStyleSheet(
+            "background:rgba(10,39,64,0.55); border-radius:4px;"
+            " border:1px solid rgba(123,189,232,0.12);"
         )
-        self.lbl_info.setWordWrap(True)
-        root.addWidget(self.lbl_info)
+        sl = QHBoxLayout(status_w)
+        sl.setContentsMargins(8, 0, 8, 0)
+        sl.setSpacing(10)
+        self.lbl_note = QLabel("—")
+        self.lbl_note.setStyleSheet(
+            "color:#7BBDE8; font-size:12px; border:none; background:transparent;"
+        )
+        self.lbl_note.setMinimumWidth(0)
+        self.lbl_cell = QLabel("")
+        self.lbl_cell.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_cell.setStyleSheet(
+            "color:#BDD8E9; font-size:12px; border:none; background:transparent;"
+        )
+        self.lbl_cell.setMinimumWidth(0)
+        sl.addWidget(self.lbl_note, 1)
+        sl.addWidget(self.lbl_cell, 1)
+        root.addWidget(status_w)
 
         # Single horizontal splitter: table | image viewer (mirrors PostProcessDialog)
         splitter = QSplitter(Qt.Horizontal)
@@ -158,7 +174,7 @@ class HardCaseBrowserDialog(QDialog):
         self.table.setHorizontalHeaderLabels(headers)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         for c in range(1, len(_COLS) + 1):
@@ -166,7 +182,7 @@ class HardCaseBrowserDialog(QDialog):
         self.table.horizontalHeader().setDefaultSectionSize(110)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setRowCount(0)
-        self.table.currentCellChanged.connect(self._on_row_changed)
+        self.table.currentCellChanged.connect(self._on_cell_changed)
         splitter.addWidget(self.table)
 
         # Image panel
@@ -237,6 +253,8 @@ class HardCaseBrowserDialog(QDialog):
         self.table.setRowCount(0)
         self._row_case_map.clear()
         self._clear_image()
+        self.lbl_note.setText("—")
+        self.lbl_cell.setText("")
 
         if not os.path.isdir(self._root_dir):
             return
@@ -283,13 +301,11 @@ class HardCaseBrowserDialog(QDialog):
         self._row_case_map[base_row]     = (folder_path, images, report)
         self._row_case_map[base_row + 1] = (folder_path, images, report)
 
-        def _cell(text, fg, bg, tooltip=None):
+        def _cell(text, fg, bg):
             it = QTableWidgetItem(text)
             it.setForeground(fg)
             it.setBackground(bg)
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
-            if tooltip:
-                it.setToolTip(tooltip)
             return it
 
         self.table.setItem(base_row,     0, _cell("📋", QColor("#7BBDE8"), _C_ROW0_BG))
@@ -308,44 +324,35 @@ class HardCaseBrowserDialog(QDialog):
 
             b_it = _cell(b_disp,
                          _C_CHG_BFG if changed else _C_TEXT,
-                         _C_CHG_BBG if changed else _C_ROW0_BG,
-                         tooltip=b_raw if b_raw else None)
+                         _C_CHG_BBG if changed else _C_ROW0_BG)
             a_it = _cell(a_disp,
                          _C_CHG_AFG if changed else _C_TEXT,
-                         _C_CHG_ABG if changed else _C_ROW1_BG,
-                         tooltip=a_raw if a_raw else None)
+                         _C_CHG_ABG if changed else _C_ROW1_BG)
             self.table.setItem(base_row,     c_idx, b_it)
             self.table.setItem(base_row + 1, c_idx, a_it)
 
-    # ── Row selection → image ───────────────────
-    def _on_row_changed(self, cur_row, *_):
+    # ── Cell selection → status bar + image ────
+    def _on_cell_changed(self, cur_row, cur_col, prev_row, _prev_col):
         if cur_row < 0:
             return
+
+        # Right side: full text of the clicked cell
+        item = self.table.item(cur_row, cur_col)
+        self.lbl_cell.setText(item.text() if item else "")
+
         case = self._row_case_map.get(cur_row)
         if not case:
             return
         folder_path, images, report = case
 
-        # Update status bar
-        tab     = report.get("tab", "?")
-        row_n   = report.get("table_row_index_1_based", "?")
-        created = report.get("created_at", "")
-        note    = report.get("note", "")
-        source  = report.get("source_file", "") or os.path.basename(folder_path)
-        dt_str  = ""
-        if created:
-            try:
-                dt_str = datetime.fromisoformat(created).strftime("%d/%m/%Y %H:%M")
-            except ValueError:
-                dt_str = created
-        parts = [f"Tab: {tab}", f"Dòng: {row_n}"]
-        if dt_str:
-            parts.append(f"Thời gian: {dt_str}")
-        if source:
-            parts.append(f"File: {source}")
-        if note:
-            parts.append(f"📝 {note}")
-        self.lbl_info.setText("  ·  ".join(parts))
+        # Skip image/note update when still on the same case (only column moved)
+        prev_case = self._row_case_map.get(prev_row) if prev_row >= 0 else None
+        if prev_case and prev_case[0] == folder_path:
+            return
+
+        # Left side: note/reason the user wrote when reporting this case
+        note = report.get("note", "")
+        self.lbl_note.setText(note if note else "—")
 
         self._current_rotation = 0
         self._original_pixmap  = None

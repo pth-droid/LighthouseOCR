@@ -67,10 +67,7 @@ _FONT_DATA = Font(name="Calibri", size=14)
 def _fmt_money(val):
     if val is None: return ""
     try:
-        fval = float(val)
-        if fval == int(fval):
-            return "{:,}".format(int(fval))
-        return "{:,.2f}".format(fval)
+        return "{:,.0f}".format(float(val))
     except:
         return str(val)
 
@@ -421,6 +418,29 @@ class PostProcessDialog(QDialog):
         
         root.addWidget(self.tabs, stretch=1)
 
+        # Status bar: left=column name, right=full selected cell content
+        pps_status_w = QWidget()
+        pps_status_w.setFixedHeight(26)
+        pps_status_w.setStyleSheet(
+            "background:rgba(10,39,64,0.5); border-radius:3px;"
+            " border:1px solid rgba(123,189,232,0.12);"
+        )
+        pps_sl = QHBoxLayout(pps_status_w)
+        pps_sl.setContentsMargins(8, 0, 8, 0)
+        pps_sl.setSpacing(10)
+        self.lbl_pps_col = QLabel("")
+        self.lbl_pps_col.setStyleSheet(
+            "color:#7BBDE8; font-size:12px; border:none; background:transparent;"
+        )
+        self.lbl_pps_cell = QLabel("")
+        self.lbl_pps_cell.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_pps_cell.setStyleSheet(
+            "color:#BDD8E9; font-size:12px; border:none; background:transparent;"
+        )
+        pps_sl.addWidget(self.lbl_pps_col, 1)
+        pps_sl.addWidget(self.lbl_pps_cell, 2)
+        root.addWidget(pps_status_w)
+
         # Bottom Actions
         footer = QHBoxLayout()
         self.btn_delete = QPushButton("🗑️  Xoá")
@@ -442,6 +462,14 @@ class PostProcessDialog(QDialog):
         footer.addWidget(self.btn_cancel)
         footer.addWidget(self.btn_save)
         root.addLayout(footer)
+
+        # Wire both tables to update status bar on cell selection
+        self.pnmh_table.currentCellChanged.connect(
+            lambda r, c, _pr, _pc: self._update_status_bar(self.pnmh_table, r, c)
+        )
+        self.chiphi_table.currentCellChanged.connect(
+            lambda r, c, _pr, _pc: self._update_status_bar(self.chiphi_table, r, c)
+        )
 
     def _build_image_panel(self, scroll_attr: str, label_attr: str) -> QWidget:
         """Factory: builds a right-side invoice image panel. Stores scroll/label as self.<attr>."""
@@ -814,6 +842,16 @@ class PostProcessDialog(QDialog):
         self.chiphi_splitter.setStretchFactor(1, 35)
 
         layout.addWidget(self.chiphi_splitter, stretch=1)
+
+    def _update_status_bar(self, table: QTableWidget, row: int, col: int):
+        if row < 0 or col < 0:
+            return
+        item = table.item(row, col)
+        text = item.text() if item else ""
+        header = table.horizontalHeaderItem(col)
+        col_name = header.text() if header else ""
+        self.lbl_pps_col.setText(col_name)
+        self.lbl_pps_cell.setText(text)
 
     def _setup_table_style(self, table: QTableWidget):
         table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
