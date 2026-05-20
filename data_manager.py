@@ -115,7 +115,7 @@ class DataManager:
         # Model Configs
         from path_utils import get_root_dir
         self.models = _DEFAULT_MODELS.copy()
-        self.config_file = os.path.join(get_root_dir(), "lighthouse_config.json")
+        self.config_file = os.path.join(get_root_dir(), "env", "lighthouse_config.json")
 
     def load_config(self):
         """Tải cấu hình model từ file bên ngoài (không nén trong exe)."""

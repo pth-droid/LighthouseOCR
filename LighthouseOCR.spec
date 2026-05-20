@@ -10,12 +10,12 @@
 #     LighthouseOCR.exe
 #     _internal/                 ← bundled Python + libs (managed by PyInstaller)
 #     Data structure/            ← master Excel files (editable by users)
-#     python_env/                ← NOT included here; created by Setup_Moi_Truong.bat
+#     env/                ← NOT included here; created by Setup_Moi_Truong.bat
 #
 # Notes:
-#   - PaddleOCR runs in a separate portable Python (python_env/) via subprocess.
+#   - PaddleOCR runs in a separate portable Python (env/) via subprocess.
 #     It is intentionally excluded from this bundle.
-#   - After building, copy python_env/ into dist/LighthouseOCR/ (or have users
+#   - After building, copy env/ into dist/LighthouseOCR/ (or have users
 #     run Setup_Moi_Truong.bat inside the dist folder).
 
 block_cipher = None
@@ -44,7 +44,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Exclude OCR stack — it runs in python_env/ subprocess, not in the main process
+    # Exclude OCR stack — it runs in env/ subprocess, not in the main process
     excludes=['paddlepaddle', 'paddleocr', 'paddle', 'pytesseract', 'cv2'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

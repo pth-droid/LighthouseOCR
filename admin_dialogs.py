@@ -19,7 +19,7 @@ from security_helpers import get_hardware_id, obscure_data
 # Duplicated here to avoid circular imports with main_app_qt
 ADMIN_PASSWORD = "admin"
 STATIC_SALT    = "lh_app_secure_v1"
-CONFIG_FILE    = get_asset_path("lighthouse_config.json")
+CONFIG_FILE    = get_asset_path(os.path.join("env", "lighthouse_config.json"))
 
 
 # ──────────────────────────────────────────────
@@ -289,6 +289,7 @@ class AdminConfigDialog(QDialog):
 
         try:
             cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), CONFIG_FILE)
+            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(file_data, f, indent=2)
 

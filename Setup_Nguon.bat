@@ -3,13 +3,13 @@ setlocal enabledelayedexpansion
 :: ========================================================
 :: Lighthouse OCR - Setup chay tu ma nguon (Source Run)
 :: Muc dich: Cai dat Python portable + tat ca thu vien can thiet
-::           de chay truc tiep bang 'python_env\python.exe main_app_qt.py'
+::           de chay truc tiep bang 'env\python.exe main_app_qt.py'
 ::           Khong can build EXE.
 :: ========================================================
 
 set "TITLE=Lighthouse OCR - Thiet lap chay tu nguon"
 set "BASE_DIR=%~dp0"
-set "PYTHON_DIR=%BASE_DIR%python_env"
+set "PYTHON_DIR=%BASE_DIR%env"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
 set "PYTHON_ZIP=%PYTHON_DIR%\python.zip"
 set "GET_PIP=%PYTHON_DIR%\get-pip.py"
@@ -161,16 +161,16 @@ echo [INFO] Tao file khoi dong ung dung...
 (
     echo @echo off
     echo cd /d "%%~dp0"
-    echo if not exist "%%~dp0python_env\python.exe" ^(
-    echo     echo [LOI] Khong tim thay python_env\python.exe
+    echo if not exist "%%~dp0env\python.exe" ^(
+    echo     echo [LOI] Khong tim thay env\python.exe
     echo     echo [INFO] Hay chay lai Setup_Nguon.bat truoc.
     echo     pause
     echo     exit /b 1
     echo ^)
     echo :: Kiem tra Python co chay duoc khong ^(bat loi DLL/VC++ thieu^)
-    echo "%%~dp0python_env\python.exe" -c "print('ok')" >nul 2>&1
+    echo "%%~dp0env\python.exe" -c "print('ok')" >nul 2>&1
     echo if errorlevel 1 ^(
-    echo     echo [LOI] python_env\python.exe khong chay duoc.
+    echo     echo [LOI] env\python.exe khong chay duoc.
     echo     echo [INFO] Co the thieu Microsoft Visual C++ Redistributable 2015-2022.
     echo     echo [INFO] Tai tai: https://aka.ms/vs/17/release/vc_redist.x64.exe
     echo     echo [INFO] Sau do cai dat va chay lai ung dung.
@@ -178,13 +178,13 @@ echo [INFO] Tao file khoi dong ung dung...
     echo     exit /b 1
     echo ^)
     echo :: Chay ung dung khong hien console ^(pythonw^)
-    echo "%%~dp0python_env\pythonw.exe" "%%~dp0main_app_qt.py"
+    echo "%%~dp0env\pythonw.exe" "%%~dp0main_app_qt.py"
     echo set _EXIT=%%errorlevel%%
     echo if %%_EXIT%% neq 0 ^(
     echo     echo.
     echo     echo [LOI] Ung dung gap loi ^(ma: %%_EXIT%%%^). Dang hien thi chi tiet:
     echo     echo.
-    echo     "%%~dp0python_env\python.exe" "%%~dp0main_app_qt.py"
+    echo     "%%~dp0env\python.exe" "%%~dp0main_app_qt.py"
     echo     pause
     echo ^)
 ) > "%LAUNCHER%"
@@ -229,7 +229,7 @@ echo     LighthouseInvoicesOCR.lnk  (shortcut voi icon)
 echo   HOAC:
 echo     LighthouseInvoicesOCR.bat
 echo   HOAC:
-echo     python_env\pythonw.exe main_app_qt.py
+echo     env\pythonw.exe main_app_qt.py
 echo.
 echo   Lan dau chay: Vao Settings (banh rang) va nhap
 echo   Gemini API Key. Lay key mien phi tai:

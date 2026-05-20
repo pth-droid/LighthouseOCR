@@ -8,8 +8,8 @@ echo     KHOI DONG CONG CU GAN NHAN PPOCRLabel (GPU)
 echo ===================================================
 echo.
 
-:: Sử dụng môi trường python_env (để tránh lỗi permission và index trên Windows)
-set PYTHON_EXE=.\python_env\python.exe
+:: Sử dụng môi trường env (để tránh lỗi permission và index trên Windows)
+set PYTHON_EXE=.\env\python.exe
 
 echo [1/2] Kiem tra moi truong Python...
 %PYTHON_EXE% --version

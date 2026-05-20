@@ -53,7 +53,7 @@ class ClickableLineEdit(QLineEdit):
 #  Constants / Config
 # ──────────────────────────────────────────────
 ADMIN_PASSWORD = "admin"
-CONFIG_FILE    = get_asset_path("lighthouse_config.json")
+CONFIG_FILE    = get_asset_path(os.path.join("env", "lighthouse_config.json"))
 GEMINI_API_KEY = ""
 STATIC_SALT    = "lh_app_secure_v1"  # Cố định cho password để không bị sai khi đổi máy
 APP_VERSION    = "v7.1"
@@ -848,6 +848,7 @@ class AdminConfigDialog(QDialog):
 
         try:
             cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), CONFIG_FILE)
+            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(file_data, f, indent=2)
             
@@ -1235,6 +1236,19 @@ class LighthouseOCRApp(QMainWindow):
         layout.addLayout(footer)
 
         self._run_preflight_validation(show_dialog=False)
+        QTimer.singleShot(100, self._check_ocr_env)
+
+    def _check_ocr_env(self):
+        python_exe = os.path.join(get_root_dir(), "env", "python.exe")
+        if not os.path.exists(python_exe):
+            QMessageBox.warning(
+                self,
+                "Chưa cài đặt môi trường OCR",
+                "Không tìm thấy môi trường Python OCR tại:\n"
+                "  env\\python.exe\n\n"
+                "Hãy chạy file Setup_Moi_Truong.bat để cài đặt trước khi sử dụng tính năng OCR.\n"
+                "Sau khi hoàn tất, khởi động lại ứng dụng."
+            )
 
     def _set_master_data_status(self, warnings: list[str], has_critical: bool):
         if not warnings:

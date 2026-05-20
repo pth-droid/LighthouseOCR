@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 
 set "TITLE=Lighthouse OCR - Thiet lap moi truong he thong"
 set "BASE_DIR=%~dp0"
-set "PYTHON_DIR=%BASE_DIR%python_env"
+set "PYTHON_DIR=%BASE_DIR%env"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
 set "PYTHON_ZIP=%PYTHON_DIR%\python.zip"
 set "GET_PIP=%PYTHON_DIR%\get-pip.py"

@@ -14,7 +14,7 @@ class LocalPaddleOCREngine:
         """
         Khởi tạo Engine kết nối với môi trường Python ngoài (Hybrid Architecture).
         """
-        self.python_env_dir = os.path.join(get_root_dir(), "python_env")
+        self.python_env_dir = os.path.join(get_root_dir(), "env")
         if os.name == 'nt':
             self.python_exe = os.path.join(self.python_env_dir, "python.exe")
         else:
