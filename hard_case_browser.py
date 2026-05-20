@@ -41,6 +41,15 @@ _C_CHG_ABG = QColor("#0A2A0A")
 _C_ROW0_BG = QColor("#0A1828")
 _C_ROW1_BG = QColor("#081408")
 
+_MONEY_COLS = {14, 17, 20}  # col numbers that should use accounting format
+
+
+def _fmt_accounting(val: str) -> str:
+    try:
+        return "{:,.0f}".format(float(val.replace(",", "").replace(" ", "")))
+    except (ValueError, AttributeError):
+        return val
+
 
 def _fmt_case_label(folder_name: str, mtime: float) -> str:
     parts = folder_name.split("_")
@@ -124,6 +133,16 @@ class HardCaseBrowserDialog(QDialog):
         title = QLabel("🗂  Hard Cases đã thu thập  —  mỗi cặp 2 dòng: Gốc (trên) · Đã sửa (dưới)")
         title.setStyleSheet("font-size:14px; font-weight:700; color:#BDD8E9;")
         root.addWidget(title)
+
+        # Status bar showing selected case metadata
+        self.lbl_info = QLabel("—")
+        self.lbl_info.setStyleSheet(
+            "color:#7BBDE8; font-size:12px; padding:4px 8px;"
+            " background:rgba(10,39,64,0.6); border-radius:4px;"
+            " border:1px solid rgba(123,189,232,0.15);"
+        )
+        self.lbl_info.setWordWrap(True)
+        root.addWidget(self.lbl_info)
 
         # Single horizontal splitter: table | image viewer (mirrors PostProcessDialog)
         splitter = QSplitter(Qt.Horizontal)
@@ -260,38 +279,41 @@ class HardCaseBrowserDialog(QDialog):
         self.table.setRowHeight(base_row,     28)
         self.table.setRowHeight(base_row + 1, 28)
 
-        # Register both rows → this case's folder + images
-        self._row_case_map[base_row]     = (folder_path, images)
-        self._row_case_map[base_row + 1] = (folder_path, images)
+        # Register both rows → (folder_path, images, report)
+        self._row_case_map[base_row]     = (folder_path, images, report)
+        self._row_case_map[base_row + 1] = (folder_path, images, report)
 
-        # Row-label cells
-        label_text = f"📋 Gốc  ·  {tab} r{row_n}  ·  {dt}"
-        if note:
-            label_text += f"  ·  📝 {note}"
-
-        def _cell(text, fg, bg):
+        def _cell(text, fg, bg, tooltip=None):
             it = QTableWidgetItem(text)
             it.setForeground(fg)
             it.setBackground(bg)
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+            if tooltip:
+                it.setToolTip(tooltip)
             return it
 
-        self.table.setItem(base_row,     0, _cell(label_text,    QColor("#7BBDE8"), _C_ROW0_BG))
-        self.table.setItem(base_row + 1, 0, _cell("✏️ Đã sửa",  QColor("#7FD47F"), _C_ROW1_BG))
+        self.table.setItem(base_row,     0, _cell("📋", QColor("#7BBDE8"), _C_ROW0_BG))
+        self.table.setItem(base_row + 1, 0, _cell("✏️", QColor("#7FD47F"), _C_ROW1_BG))
 
         # Data cells
         for c_idx, (col_num, _) in enumerate(_COLS, start=1):
-            key   = str(col_num)
-            b_val = str(before.get(key, "") or "")
-            a_val = str(after.get(key,  "") or "")
-            changed = b_val != a_val
+            key      = str(col_num)
+            b_raw    = str(before.get(key, "") or "")
+            a_raw    = str(after.get(key,  "") or "")
+            changed  = b_raw != a_raw
+            is_money = col_num in _MONEY_COLS
 
-            b_it = _cell(b_val,
+            b_disp = _fmt_accounting(b_raw) if is_money and b_raw else b_raw
+            a_disp = _fmt_accounting(a_raw) if is_money and a_raw else a_raw
+
+            b_it = _cell(b_disp,
                          _C_CHG_BFG if changed else _C_TEXT,
-                         _C_CHG_BBG if changed else _C_ROW0_BG)
-            a_it = _cell(a_val,
+                         _C_CHG_BBG if changed else _C_ROW0_BG,
+                         tooltip=b_raw if b_raw else None)
+            a_it = _cell(a_disp,
                          _C_CHG_AFG if changed else _C_TEXT,
-                         _C_CHG_ABG if changed else _C_ROW1_BG)
+                         _C_CHG_ABG if changed else _C_ROW1_BG,
+                         tooltip=a_raw if a_raw else None)
             self.table.setItem(base_row,     c_idx, b_it)
             self.table.setItem(base_row + 1, c_idx, a_it)
 
@@ -302,7 +324,29 @@ class HardCaseBrowserDialog(QDialog):
         case = self._row_case_map.get(cur_row)
         if not case:
             return
-        folder_path, images = case
+        folder_path, images, report = case
+
+        # Update status bar
+        tab     = report.get("tab", "?")
+        row_n   = report.get("table_row_index_1_based", "?")
+        created = report.get("created_at", "")
+        note    = report.get("note", "")
+        source  = report.get("source_file", "") or os.path.basename(folder_path)
+        dt_str  = ""
+        if created:
+            try:
+                dt_str = datetime.fromisoformat(created).strftime("%d/%m/%Y %H:%M")
+            except ValueError:
+                dt_str = created
+        parts = [f"Tab: {tab}", f"Dòng: {row_n}"]
+        if dt_str:
+            parts.append(f"Thời gian: {dt_str}")
+        if source:
+            parts.append(f"File: {source}")
+        if note:
+            parts.append(f"📝 {note}")
+        self.lbl_info.setText("  ·  ".join(parts))
+
         self._current_rotation = 0
         self._original_pixmap  = None
         if images:
@@ -317,7 +361,7 @@ class HardCaseBrowserDialog(QDialog):
         case = self._row_case_map.get(row)
         if not case:
             return
-        folder_path, _ = case
+        folder_path = case[0]
         try:
             os.startfile(folder_path)
         except (OSError, AttributeError) as exc:
