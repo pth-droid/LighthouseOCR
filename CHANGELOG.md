@@ -6,7 +6,7 @@ The app version is defined in a **single place**:
 
 ```python
 # main_app_qt.py, line ~58
-APP_VERSION = "v6.2"
+APP_VERSION = "v7.3"
 ```
 
 This constant is automatically displayed in the bottom-left footer of the main window:
@@ -15,7 +15,32 @@ This constant is automatically displayed in the bottom-left footer of the main w
 lbl_version = QLabel(f"Phiên bản: {APP_VERSION}")
 ```
 
-To bump the version, change `APP_VERSION` in `main_app_qt.py`. No other file needs to be updated for the UI to reflect it.
+To bump the version, change `APP_VERSION` in `main_app_qt.py`.  
+`Deploy_Build.ps1` now reads this value automatically, so build metadata stays in sync.
+
+---
+
+## [v7.3] — 2026-05-30
+
+### Added / Fixed
+
+- **Version bump** (`main_app_qt.py`, `claude.md`): Updated runtime metadata to `v7.3`.
+- **Single source-of-truth enforcement** (`Deploy_Build.ps1`): Deployment banner now reads `APP_VERSION` from `main_app_qt.py` instead of hardcoded script version text.
+- **Client dependency self-heal** (`Deploy_Build.ps1`): Build output now includes `Setup_Moi_Truong.bat` and a generated launcher `LighthouseOCR_Start.bat` that preflights `env\\python.exe` and can trigger setup when runtime dependencies are missing.
+- **PaddleOCR stack update** (`README.md`, `Setup_Moi_Truong.bat`, `Setup_Nguon.bat`, runtime env): Updated target stack to `paddleocr==3.6.0` with `paddlepaddle==3.3.1`.
+
+---
+
+## [v7.2] — 2026-05-21
+
+### Added / Fixed
+
+- **Version bump** (`main_app_qt.py`, `Deploy_Build.ps1`, `claude.md`): Updated runtime/build metadata to `v7.2`.
+- **Build hierarchy alignment** (`Deploy_Build.ps1`): Deployment script now uses `LighthouseOCR.spec` and copies OCR runtime to `dist/LighthouseOCR/env` (compatible with app runtime path resolution).
+- **Legacy compatibility in deploy** (`Deploy_Build.ps1`): If `env/` is missing, script falls back to `python_env/` as source during copy.
+- **Build stability improvement** (`Deploy_Build.ps1`): PyInstaller now uses a timestamped `--workpath` per run to reduce collisions with stale/locked build artifacts.
+- **OpenCV packaging fix** (`LighthouseOCR.spec`): `cv2` is now bundled with the main app because image preprocessing runs before the PaddleOCR subprocess.
+- **Prompt asset packaging fix** (`LighthouseOCR.spec`, `module_*_ocr.py`, `module_calculator.py`): Runtime skill prompt Markdown files are now bundled and resolved through `path_utils` for PyInstaller builds.
 
 ---
 
@@ -31,18 +56,15 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`. No other file nee
 - **Full error logging** (`ocr_pipeline.py`): Subprocess stderr now fully logged to UI instead of being truncated to first line.
 - **Build system** (`Deploy_Build.ps1`, `.spec`): Added `-Full` flag for full build (includes Data structure). Default is Update build (code + python_env only).
 
----
-
-
 ### Added / Enhanced
 
 - **Dialog opens maximized** (`post_process_dialog.py`): Review dialog now launches fullscreen for maximum working space. Window state (maximized or windowed + position) is saved across sessions using `QSettings`.
-- **Image panel 35% width** (`post_process_dialog.py`): Splitter defaults to 65% table / 35% image panel. Both PNMH and Chi Phí splitter positions are persisted separately in settings.
+- **Image panel 35% width** (`post_process_dialog.py`): Splitter defaults to 65% table / 35% image panel. Both PNMH and Chi phí splitter positions are persisted separately in settings.
 - **Scroll-to-zoom on invoice image** (`post_process_dialog.py`): Mouse wheel over the image panel zooms in/out (15% per tick, range 0.2×–8×). Zoom resets when navigating to a new row.
 - **Click-drag to pan** (`post_process_dialog.py`): Left-click and drag scrolls the image in any direction. Cursor changes to ClosedHand while panning.
-- **Chi Phí tab image panel** (`post_process_dialog.py`): The Nhập Chi Phí tab now has the same invoice image panel (same zoom/pan/scroll mechanics) as PNMH. Source filename is stored in Chi Phí Excel col 16, populated by both OCR-routed rows and rows transferred from PNMH.
+- **Chi phí tab image panel** (`post_process_dialog.py`): The Nhập Chi phí tab now has the same invoice image panel (same zoom/pan/scroll mechanics) as PNMH. Source filename is stored in Chi phí Excel col 16, populated by both OCR-routed rows and rows transferred from PNMH.
 - **Processed image saved to DONE folder** (`main_app_qt.py`): After OCR, the enhanced (denoised + CLAHE + sharpened) PIL image is now saved to `DONE/` instead of moving the raw original. The review dialog therefore shows the processed version.
-- **Source filename in Chi Phí Excel col 16** (`core_excel_mapper.py`): OCR-routed Chi Phí rows now record the source image filename in column P, consistent with PNMH col AB.
+- **Source filename in Chi phí Excel col 16** (`core_excel_mapper.py`): OCR-routed Chi phí rows now record the source image filename in column P, consistent with PNMH col AB.
 
 ---
 
@@ -50,13 +72,8 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`. No other file nee
 
 ### Added
 
-- **Invoice image preview panel** (`post_process_dialog.py`): PNMH review dialog now
-  displays a scrollable image of the source invoice alongside the data table. The panel
-  appears in a resizable splitter (table/panel, ~65%/35%). Selecting any row
-  auto-loads the corresponding image from the `DONE` folder.
-- **Source filename persisted to Excel col 28** (`core_excel_mapper.py`): Each scanned
-  row now records the originating image filename in column AB. Existing Excel files
-  without col 28 open without error (backward compatible).
+- **Invoice image preview panel** (`post_process_dialog.py`): PNMH review dialog now displays a scrollable image of the source invoice alongside the data table. The panel appears in a resizable splitter (table/panel, ~65%/35%). Selecting any row auto-loads the corresponding image from the `DONE` folder.
+- **Source filename persisted to Excel col 28** (`core_excel_mapper.py`): Each scanned row now records the originating image filename in column AB. Existing Excel files without col 28 open without error (backward compatible).
 
 ---
 

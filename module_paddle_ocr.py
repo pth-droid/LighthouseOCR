@@ -21,12 +21,57 @@ class LocalPaddleOCREngine:
             self.python_exe = os.path.join(self.python_env_dir, "bin", "python")
         
         self.runner_script = get_asset_path("ocr_runner.py")
+        self._runtime_version = None
         
         # Chỉ cảnh báo, không throw exception ở đây để App vẫn lên được UI
         if not os.path.exists(self.python_exe):
             print(f"Warning: Portable Python không tìm thấy tại {self.python_exe}")
         if not os.path.exists(self.runner_script):
             print(f"Warning: OCR runner script không tìm thấy tại {self.runner_script}")
+
+    def _get_runtime_version(self) -> str:
+        if self._runtime_version:
+            return self._runtime_version
+        if not os.path.exists(self.python_exe):
+            self._runtime_version = "unknown"
+            return self._runtime_version
+
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+
+        try:
+            result = subprocess.run(
+                [self.python_exe, "-c", "import paddleocr; print(getattr(paddleocr, '__version__', 'unknown'))"],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='ignore',
+                startupinfo=startupinfo,
+                timeout=15,
+            )
+            lines = (result.stdout or "").strip().splitlines()
+            self._runtime_version = lines[-1].strip() if lines else "unknown"
+        except Exception:
+            self._runtime_version = "unknown"
+        return self._runtime_version or "unknown"
+
+    def _build_start_message(self, runtime_version: str) -> str:
+        return f"🔍 Đang gọi Local AI PaddleOCR {runtime_version} (qua subprocess)..."
+
+    def _build_completion_message(
+        self,
+        runtime_version: str,
+        text_count: int,
+        avg_confidence: float,
+        elapsed_seconds: float,
+    ) -> str:
+        return (
+            f"✅ PaddleOCR {runtime_version} thu thập được {text_count} dòng "
+            f"(Tin cậy: {avg_confidence:.1%}) trong {elapsed_seconds:.2f}s"
+        )
 
     def extract_raw_text(self, image_input, stop_event=None, status_callback=None) -> tuple[str, float]:
         """
@@ -37,8 +82,9 @@ class LocalPaddleOCREngine:
         if not os.path.exists(self.runner_script):
              raise RuntimeError(f"Không tìm thấy script OCR ocr_runner.py tại hệ thống.")
 
+        runtime_version = self._get_runtime_version()
         if status_callback:
-            status_callback("🔍 Đang gọi Local AI PaddleOCR (qua subprocess)...")
+            status_callback(self._build_start_message(runtime_version))
 
         if stop_event and stop_event.is_set():
             raise EngineCancellationError("STOP_REQUESTED")
@@ -64,6 +110,7 @@ class LocalPaddleOCREngine:
         os.close(fd)
 
         try:
+            started_at = time.perf_counter()
             # Ẩn cửa sổ Console đen hiện lên khi gọi subprocess trên Windows
             startupinfo = None
             if os.name == 'nt':
@@ -118,17 +165,15 @@ class LocalPaddleOCREngine:
                  
             texts = data.get("texts", [])
             confidences = data.get("scores", [])
-            
-            if not texts:
-                return "", 0.0
-
+            elapsed_seconds = time.perf_counter() - started_at
             raw_text_string = "\n".join(texts)
             avg_confidence  = sum(confidences) / len(confidences) if confidences else 0.0
 
             if status_callback:
-                status_callback(
-                    f"✅ PaddleOCR thu thập được {len(texts)} dòng (Tin cậy: {avg_confidence:.1%})"
-                )
+                status_callback(self._build_completion_message(runtime_version, len(texts), avg_confidence, elapsed_seconds))
+
+            if not texts:
+                return "", 0.0
 
             return raw_text_string, avg_confidence
 

@@ -99,6 +99,20 @@ _DEFAULT_MODELS = {
     "pro_primary":    "gemini-2.5-pro",
     "pro_fallback":   "gemini-2.5-pro"
 }
+_DEFAULT_OCR_MODE = "stable"
+
+
+def _normalize_ocr_mode(value: str) -> str:
+    aliases = {
+        "stable": "stable",
+        "cpu": "stable",
+        "safe": "stable",
+        "cpu_fast": "cpu_fast",
+        "fast": "cpu_fast",
+        "gpu": "gpu",
+        "cuda": "gpu",
+    }
+    return aliases.get(str(value or "").strip().lower(), _DEFAULT_OCR_MODE)
 
 class DataManager:
     def __init__(self):
@@ -115,6 +129,7 @@ class DataManager:
         # Model Configs
         from path_utils import get_root_dir
         self.models = _DEFAULT_MODELS.copy()
+        self.ocr_mode = _DEFAULT_OCR_MODE
         self.config_file = os.path.join(get_root_dir(), "env", "lighthouse_config.json")
 
     def load_config(self):
@@ -125,10 +140,11 @@ class DataManager:
                     cfg = json.load(f)
                     if "models" in cfg:
                         self.models.update(cfg["models"])
+                    self.ocr_mode = _normalize_ocr_mode(cfg.get("ocr_mode"))
             except Exception as e:
                 print(f"Warning: Could not load model config: {e}")
 
-    def save_config(self, api_key=None, admin_pass=None, models=None):
+    def save_config(self, api_key=None, admin_pass=None, models=None, ocr_mode=None):
         """Lưu cấu hình (HWID, API Key, Password đã được mã hóa ở main_app_qt) + Models."""
         # Chú ý: Việc mã hóa api_key/pass vẫn thực hiện ở main_app_qt để giữ logic security tập trung.
         # Hàm này chủ yếu để cập nhật phần 'models' trong file json.
@@ -142,6 +158,9 @@ class DataManager:
         if models:
             current_data["models"] = models
             self.models.update(models)
+        if ocr_mode is not None:
+            current_data["ocr_mode"] = _normalize_ocr_mode(ocr_mode)
+            self.ocr_mode = current_data["ocr_mode"]
         
         # Các trường khác được pass trực tiếp từ AdminConfigDialog (dạng đã obscure)
         if api_key: current_data["api_key"] = api_key

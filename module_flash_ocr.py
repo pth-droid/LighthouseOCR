@@ -10,9 +10,9 @@ from google.genai.errors import APIError
 from core_rate_limiter import global_rate_limiter, EngineCancellationError
 from core_llm_client import parse_json_response, generate_with_fallback
 from data_manager import DataManager
+from path_utils import get_asset_path
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_SKILL_FILE = os.path.join(_BASE_DIR, "ocr_text_structurer_skill.md")
+_SKILL_FILE = get_asset_path("ocr_text_structurer_skill.md")
 
 class FlashTextStructurer:
     def __init__(self, api_key: str, data_store: DataManager):

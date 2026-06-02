@@ -1,3 +1,6 @@
+- `main_app_qt.py`: Source of truth for software version (`APP_VERSION`).
+- `claude.md`: Source of truth for project documentation and Alias Dictionary management details.
+
 # LighthouseOCR
 
 Ứng dụng OCR hóa đơn tự động cho nghiệp vụ nhập kho (PNMH) và nhập chi phí, sử dụng PaddleOCR + Google Gemini.
@@ -36,7 +39,7 @@ Giải nén toàn bộ thư mục `LighthouseOCR` ra ổ cứng. Ví dụ: `D:\L
 3. Script sẽ tự động:
    - Cài Microsoft Visual C++ Redistributable (nếu thiếu)
    - Tải Python 3.10 portable (`python_env/`)
-   - Cài PaddleOCR 3.5.0 + PaddlePaddle 3.3.1
+   - Cài PaddleOCR 3.6.0 + PaddlePaddle 3.3.1
    - Tải trước mô hình AI (~200 MB)
 4. Khi hiện `HE THONG DA SAN SANG!` → nhấn phím bất kỳ để đóng
 
@@ -96,7 +99,7 @@ pip install google-genai
 pip install "paddlepaddle==3.3.1" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 
 # PaddleOCR
-pip install "paddleocr==3.5.0"
+pip install "paddleocr==3.6.0"
 
 # Tesseract wrapper (tùy chọn)
 pip install pytesseract
@@ -233,21 +236,26 @@ Khi OCR nhận diện sai tên hàng so với tên chuẩn trong hệ thống:
 pip install pyinstaller
 ```
 
-### Build
+### Build (khuyến nghị)
 
 ```bash
-pyinstaller LighthouseOCR.spec
+./Deploy_Build.ps1
 ```
 
-Output tại `dist/LighthouseOCR/`. Phân phối toàn bộ thư mục này.
+Output: `dist/LighthouseOCR/` (thư mục phát hành).
+
+### Build đầy đủ (bao gồm Data structure)
+
+```bash
+./Deploy_Build.ps1 -Full
+```
 
 ### Sau khi build
 
-1. Copy thư mục `Data structure/` vào `dist/LighthouseOCR/` (nếu chưa có)
-2. Copy `Setup_Moi_Truong.bat` vào `dist/LighthouseOCR/`
-3. Người dùng cuối chạy `Setup_Moi_Truong.bat` để cài `python_env/`
+1. Mở thư mục `dist/LighthouseOCR/` nếu cần kiểm tra nội dung trước khi phát hành.
+2. Người dùng cuối chạy `Setup_Moi_Truong.bat` để cài môi trường OCR (`env/` hoặc `python_env/` tùy bản phát hành).
 
-> **Lưu ý:** `python_env/` không được bundle trong EXE — người dùng phải chạy bat để tạo nó.
+> **Lưu ý:** Runtime OCR không được bundle trực tiếp trong EXE; gói phát hành sẽ chứa thư mục runtime đi kèm và script setup.
 
 ---
 

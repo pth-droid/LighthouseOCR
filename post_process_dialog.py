@@ -14,14 +14,14 @@ from PyQt5.QtWidgets import (
     QSplitter, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QEvent, QPoint, QSettings, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap
+from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap, QIcon
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 from path_utils import get_root_dir, get_asset_path
 
-# ──────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  Constants
-# ──────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _ROOT_DIR              = get_root_dir()
 _CHIPHI_TEMPLATE_FILE  = os.path.join(_ROOT_DIR, "Data structure", "Mẫu Nhập Chi phí.xlsx")
 
@@ -38,7 +38,7 @@ _PNMH_COLS_INFO = [
     (12, "MÃ VẬT TƯ"),
     (13, "ĐƠN VỊ TÍNH"),
     (16, "SỐ LƯỢNG"),
-    (17, "ĐƠN GIA"),
+    (17, "ĐƠN GIÁ"),
     (20, "THÀNH TIỀN"),
     (27, "GHI CHÚ")
 ]
@@ -79,7 +79,7 @@ def _fmt_date(val):
     sval = str(val).strip()
     if not sval: return ""
     
-    # Hỗ trợ gõ tắt: ddmmyy, ddmmyyyy, ddmm
+    # Há»— trá»£ gÃµ táº¯t: ddmmyy, ddmmyyyy, ddmm
     now = datetime.datetime.now()
     year = now.year
     
@@ -120,7 +120,7 @@ class PasteableTableWidget(QTableWidget):
     def mouseMoveEvent(self, event):
         if self._dragging and self._last_pos:
             delta = event.pos() - self._last_pos
-            # Giảm tốc độ grip chuột kéo cuộn (0.6x)
+            # Giáº£m tá»‘c Ä‘á»™ grip chuá»™t kÃ©o cuá»™n (0.6x)
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(delta.x() * 0.6))
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(delta.y() * 0.6))
             self._last_pos = event.pos()
@@ -152,7 +152,7 @@ class PasteableTableWidget(QTableWidget):
         if not selected_ranges:
             return
 
-        # Tách dữ liệu clipboard thành mảng 2D
+        # TÃ¡ch dá»¯ liá»‡u clipboard thÃ nh máº£ng 2D
         rows_data = [r.split('\t') for r in text.strip().split('\n')]
         row_count_data = len(rows_data)
         col_count_data = len(rows_data[0]) if row_count_data > 0 else 0
@@ -195,7 +195,7 @@ class PasteableTableWidget(QTableWidget):
             self.setItem(r, c, new_item)
         self.blockSignals(False)
 
-# ── Widget bao quanh Checkbox để tăng diện tích click ──
+# â”€â”€ Widget bao quanh Checkbox Ä‘á»ƒ tÄƒng diá»‡n tÃ­ch click â”€â”€
 class ClickableCheckBoxWidget(QWidget):
     def __init__(self, checkbox, bg_color=None, parent=None):
         super().__init__(parent)
@@ -217,7 +217,7 @@ class ClickableCheckBoxWidget(QWidget):
             self.checkbox.toggle()
         super().mousePressEvent(event)
 
-# ── Delegate cho Combobox có thể gõ ──
+# â”€â”€ Delegate cho Combobox cÃ³ thá»ƒ gÃµ â”€â”€
 class ComboBoxDelegate(QStyledItemDelegate):
     def __init__(self, items, parent=None):
         super().__init__(parent)
@@ -231,10 +231,10 @@ class ComboBoxDelegate(QStyledItemDelegate):
         # Tắt tự động điền để không bị nhảy chữ khi gõ
         editor.setInsertPolicy(QComboBox.NoInsert)
         
-        # Thiết lập QCompleter để hỗ trợ gợi ý khi gõ
+        # Thiáº¿t láº­p QCompleter Ä‘á»ƒ há»— trá»£ gá»£i Ã½ khi gÃµ
         completer = QCompleter(items_list, editor)
         completer.setCaseSensitivity(Qt.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchContains) # Tìm kiếm chuỗi con
+        completer.setFilterMode(Qt.MatchContains) # TÃ¬m kiáº¿m chuá»—i con
         completer.setCompletionMode(QCompleter.PopupCompletion)
         editor.setCompleter(completer)
         
@@ -261,7 +261,7 @@ class ComboBoxDelegate(QStyledItemDelegate):
         model.setData(index, value, Qt.EditRole)
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _append_to_chiphi(chiphi_ws, chiphi_row: int, pnmh_row_data: dict, kho_dict: dict,
                       source_filename: str = "", invoice_date: str = ""):
     date_val  = invoice_date or ""
@@ -333,6 +333,7 @@ class PostProcessDialog(QDialog):
         }
 
         self.setWindowTitle("Rà soát File Kết Quả")
+        self._set_window_icon()
         self.setStyleSheet(self._stylesheet())
         self.finished.connect(self._save_settings)
 
@@ -401,7 +402,7 @@ class PostProcessDialog(QDialog):
             if splitter:
                 settings.setValue(key, splitter.sizes())
 
-    # ── UI ──────────────────────────────────────────────────────────────────
+    # â”€â”€ UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setSpacing(10)
@@ -420,7 +421,7 @@ class PostProcessDialog(QDialog):
 
         # Status bar: left=column name, right=full selected cell content
         pps_status_w = QWidget()
-        pps_status_w.setFixedHeight(26)
+        pps_status_w.setFixedHeight(30)
         pps_status_w.setStyleSheet(
             "background:rgba(10,39,64,0.5); border-radius:3px;"
             " border:1px solid rgba(123,189,232,0.12);"
@@ -430,16 +431,16 @@ class PostProcessDialog(QDialog):
         pps_sl.setSpacing(10)
         self.lbl_pps_col = QLabel("")
         self.lbl_pps_col.setStyleSheet(
-            "color:#7BBDE8; font-size:12px; border:none; background:transparent;"
+            "color:#7BBDE8; font-size:16px; border:none; background:transparent;"
         )
         self.lbl_pps_cell = QLabel("")
         self.lbl_pps_cell.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.lbl_pps_cell.setStyleSheet(
-            "color:#BDD8E9; font-size:12px; border:none; background:transparent;"
+            "color:#BDD8E9; font-size:16px; border:none; background:transparent;"
         )
         pps_sl.addWidget(self.lbl_pps_col, 1)
         pps_sl.addWidget(self.lbl_pps_cell, 2)
-        root.addWidget(pps_status_w)
+        root.insertWidget(0, pps_status_w)
 
         # Bottom Actions
         footer = QHBoxLayout()
@@ -465,10 +466,10 @@ class PostProcessDialog(QDialog):
 
         # Wire both tables to update status bar on cell selection
         self.pnmh_table.currentCellChanged.connect(
-            lambda r, c, _pr, _pc: self._update_status_bar(self.pnmh_table, r, c)
+            lambda _r, _c, _pr, _pc: self._update_status_bar(self.pnmh_table)
         )
         self.chiphi_table.currentCellChanged.connect(
-            lambda r, c, _pr, _pc: self._update_status_bar(self.chiphi_table, r, c)
+            lambda _r, _c, _pr, _pc: self._update_status_bar(self.chiphi_table)
         )
 
     def _build_image_panel(self, scroll_attr: str, label_attr: str) -> QWidget:
@@ -484,7 +485,7 @@ class PostProcessDialog(QDialog):
         pl.setContentsMargins(6, 6, 6, 6)
         pl.setSpacing(4)
 
-        # ── Top bar: title + rotate buttons ──
+        # â”€â”€ Top bar: title + rotate buttons â”€â”€
         top_bar = QHBoxLayout()
         top_bar.setSpacing(6)
 
@@ -554,14 +555,14 @@ class PostProcessDialog(QDialog):
         header.addWidget(self.btn_add_pnmh)
         layout.addLayout(header)
 
-        # ── Horizontal splitter: table (left) + image panel (right) ──
+        # â”€â”€ Horizontal splitter: table (left) + image panel (right) â”€â”€
         self.pnmh_splitter = QSplitter(Qt.Horizontal)
         self.pnmh_splitter.setHandleWidth(6)
         self.pnmh_splitter.setStyleSheet(
             "QSplitter::handle { background: rgba(123,189,232,0.15); border-radius: 3px; }"
         )
 
-        # ── Left: data table ──
+        # â”€â”€ Left: data table â”€â”€
         self.pnmh_table = PasteableTableWidget()
         self.pnmh_table.setColumnCount(len(_PNMH_COLS_INFO) + 1)
         col_labels = ["X"] + [lbl for _, lbl in _PNMH_COLS_INFO]
@@ -573,7 +574,7 @@ class PostProcessDialog(QDialog):
             QAbstractItemView.SelectedClicked
         )
 
-        # Nạp dữ liệu danh mục cho Dropdowns
+        # Náº¡p dá»¯ liá»‡u danh má»¥c cho Dropdowns
         supplier_list = []
         if self.app_data:
             for code, name in self.app_data.suppliers_dict.items():
@@ -586,7 +587,7 @@ class PostProcessDialog(QDialog):
         # 3: BỘ PHẬN | 4: ĐỐI TƯỢNG | 5: DIỄN GIẢI | 6: KHO NHẬP | 8: ĐVT
         self.pnmh_table.setItemDelegateForColumn(3, ComboBoxDelegate(_DEPT_OPTIONS, self.pnmh_table))
         self.pnmh_table.setItemDelegateForColumn(4, ComboBoxDelegate(supplier_list, self.pnmh_table))
-        # Cột Diễn giải (5) dùng item_list chung
+        # Cá»™t Diá»…n giáº£i (5) dÃ¹ng item_list chung
         self.pnmh_table.setItemDelegateForColumn(5, ComboBoxDelegate(item_list, self.pnmh_table))
         self.pnmh_table.setItemDelegateForColumn(6, ComboBoxDelegate(kho_list, self.pnmh_table))
         # Cột ĐVT (8) dùng dropdown động theo tên hàng
@@ -594,20 +595,20 @@ class PostProcessDialog(QDialog):
 
         self.pnmh_table.cellChanged.connect(self._on_pnmh_cell_changed)
 
-        # Bật menu chuột phải cho PNMH
+        # Báº­t menu chuá»™t pháº£i cho PNMH
         self.pnmh_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.pnmh_table.customContextMenuRequested.connect(self._show_pnmh_context_menu)
 
-        # Selection signal: hiển thị ảnh hóa đơn tương ứng
+        # Selection signal: hiá»ƒn thá»‹ áº£nh hÃ³a Ä‘Æ¡n tÆ°Æ¡ng á»©ng
         self.pnmh_table.selectionModel().selectionChanged.connect(self._on_pnmh_selection_changed)
 
         self._setup_table_style(self.pnmh_table)
         self.pnmh_splitter.addWidget(self.pnmh_table)
 
-        # ── Right: invoice image panel ──
+        # â”€â”€ Right: invoice image panel â”€â”€
         self.pnmh_splitter.addWidget(self._build_image_panel('img_scroll', 'img_label'))
 
-        # ── Resize weights: table 65%, image panel 35% ──
+        # â”€â”€ Resize weights: table 65%, image panel 35% â”€â”€
         self.pnmh_splitter.setStretchFactor(0, 65)
         self.pnmh_splitter.setStretchFactor(1, 35)
 
@@ -615,18 +616,18 @@ class PostProcessDialog(QDialog):
 
     def _get_dvt_options(self, index):
         row = index.row()
-        item = self.pnmh_table.item(row, 5) # 5 là cột Diễn giải
+        item = self.pnmh_table.item(row, 5) # 5 lÃ  cá»™t Diá»…n giáº£i
         if item and self.app_data:
             diengiai = item.text().lower().strip()
             all_units = set()
             
-            # 1. Lấy đơn vị từ Master List
+            # 1. Láº¥y Ä‘Æ¡n vá»‹ tá»« Master List
             if hasattr(self.app_data, 'items_dict') and diengiai in self.app_data.items_dict:
                 info = self.app_data.items_dict[diengiai]
                 if info.get("unit"): all_units.add(info["unit"])
                 if info.get("dvt0"): all_units.add(info["dvt0"])
             
-            # 2. Lấy đơn vị từ Alias Dictionary (Cấu trúc 1-N mới)
+            # 2. Láº¥y Ä‘Æ¡n vá»‹ tá»« Alias Dictionary (Cáº¥u trÃºc 1-N má»›i)
             if hasattr(self.app_data, 'aliases_dict') and diengiai in self.app_data.aliases_dict:
                 alias_info = self.app_data.aliases_dict[diengiai]
                 for u_info in alias_info.get("units", []):
@@ -638,6 +639,7 @@ class PostProcessDialog(QDialog):
         return []
 
     def _on_pnmh_selection_changed(self):
+        self._update_status_bar(self.pnmh_table)
         indexes = self.pnmh_table.selectedIndexes()
         if not indexes:
             return
@@ -650,6 +652,7 @@ class PostProcessDialog(QDialog):
         self._display_invoice_image('pnmh', img_path)
 
     def _on_chiphi_selection_changed(self):
+        self._update_status_bar(self.chiphi_table)
         indexes = self.chiphi_table.selectedIndexes()
         if not indexes:
             return
@@ -795,7 +798,7 @@ class PostProcessDialog(QDialog):
         header.addWidget(self.btn_add_chiphi)
         layout.addLayout(header)
 
-        # ── Horizontal splitter: table (left) + image panel (right) ──
+        # â”€â”€ Horizontal splitter: table (left) + image panel (right) â”€â”€
         self.chiphi_splitter = QSplitter(Qt.Horizontal)
         self.chiphi_splitter.setHandleWidth(6)
         self.chiphi_splitter.setStyleSheet(
@@ -813,7 +816,7 @@ class PostProcessDialog(QDialog):
             QAbstractItemView.SelectedClicked
         )
 
-        # Nạp dữ liệu danh mục cho Dropdowns (Chi phí)
+        # Náº¡p dá»¯ liá»‡u danh má»¥c cho Dropdowns (Chi phí)
         supplier_list = []
         if self.app_data:
             for code, name in self.app_data.suppliers_dict.items():
@@ -821,7 +824,7 @@ class PostProcessDialog(QDialog):
         supplier_list = sorted(list(set(supplier_list)))
         item_list     = sorted([str(v.get("name", "")) for v in self.app_data.items_dict.values()]) if self.app_data else []
 
-        # Combo Delegate cho các cột Chi phí (Index UI 0-based)
+        # Combo Delegate cho cÃ¡c cá»™t Chi phí (Index UI 0-based)
         # 2: BỘ PHẬN | 3: MÃ ĐỐI TƯỢNG | 4: DIỄN GIẢI
         self.chiphi_table.setItemDelegateForColumn(2, ComboBoxDelegate(_DEPT_OPTIONS, self.chiphi_table))
         self.chiphi_table.setItemDelegateForColumn(3, ComboBoxDelegate(supplier_list, self.chiphi_table))
@@ -835,7 +838,7 @@ class PostProcessDialog(QDialog):
         self._setup_table_style(self.chiphi_table)
         self.chiphi_splitter.addWidget(self.chiphi_table)
 
-        # ── Right: invoice image panel ──
+        # â”€â”€ Right: invoice image panel â”€â”€
         self.chiphi_splitter.addWidget(self._build_image_panel('chiphi_img_scroll', 'chiphi_img_label'))
 
         self.chiphi_splitter.setStretchFactor(0, 65)
@@ -843,26 +846,52 @@ class PostProcessDialog(QDialog):
 
         layout.addWidget(self.chiphi_splitter, stretch=1)
 
-    def _update_status_bar(self, table: QTableWidget, row: int, col: int):
-        if row < 0 or col < 0:
+    def _update_status_bar(self, table: QTableWidget):
+        indexes = table.selectedIndexes()
+        if not indexes:
+            self.lbl_pps_col.setText("")
+            self.lbl_pps_cell.setText("")
             return
-        item = table.item(row, col)
-        text = item.text() if item else ""
+
+        first = indexes[0]
+        col = first.column()
         header = table.horizontalHeaderItem(col)
         col_name = header.text() if header else ""
-        self.lbl_pps_col.setText(col_name)
-        self.lbl_pps_cell.setText(text)
+        count = len(indexes)
+
+        nums = []
+        for idx in indexes:
+            item = table.item(idx.row(), idx.column())
+            if not item:
+                continue
+            raw = (item.text() or "").strip()
+            if not raw:
+                continue
+            try:
+                nums.append(float(raw.replace(",", "").replace(" ", "")))
+            except ValueError:
+                pass
+
+        self.lbl_pps_col.setText(f"{col_name} | {count} ô đã chọn")
+        if count == 1:
+            item = table.item(first.row(), first.column())
+            self.lbl_pps_cell.setText(item.text() if item else "")
+        elif nums:
+            self.lbl_pps_cell.setText(f"Tổng: {sum(nums):,.2f} | Số ô số: {len(nums)}")
+        else:
+            self.lbl_pps_cell.setText("Không có ô số để tính tổng")
 
     def _setup_table_style(self, table: QTableWidget):
         table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         table.horizontalHeader().setStretchLastSection(True) # Đảm bảo bảng phủ hết chiều rộng
         table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         table.setAlternatingRowColors(False)
         table.verticalHeader().setVisible(False)
         table.setShowGrid(True)
         
-    # ── Load data ──
+    # â”€â”€ Load data â”€â”€
     def _load_pnmh(self):
         self.pnmh_table.setRowCount(0)
         self._pnmh_rows.clear()
@@ -880,7 +909,7 @@ class PostProcessDialog(QDialog):
                 
                 row_vals = {c_idx+1: val for c_idx, val in enumerate(row)}
                 
-                # Logic vlookup bằng Python
+                # Logic vlookup báº±ng Python
                 if not row_vals.get(12) or not row_vals.get(13):
                     diengiai = row_vals.get(9, "")
                     if diengiai and self.app_data and hasattr(self.app_data, 'items_dict'):
@@ -912,7 +941,7 @@ class PostProcessDialog(QDialog):
                 current_bg, alt_bg = alt_bg, current_bg
 
             chk = QCheckBox()
-            # Tăng kích thước vùng tick
+            # TÄƒng kÃ­ch thÆ°á»›c vÃ¹ng tick
             chk.setStyleSheet("QCheckBox::indicator { width: 22px; height: 22px; }")
             chk.stateChanged.connect(self._on_pnmh_check_changed)
             
@@ -933,7 +962,7 @@ class PostProcessDialog(QDialog):
                 item.setForeground(_COLOR_TEXT)
                 item.setBackground(current_bg)
                 
-                # Align Right cho cột số
+                # Align Right cho cá»™t sá»‘
                 if pnmh_col in (16, 17, 20):
                     item.setTextAlignment(Qt.AlignVCenter | Qt.AlignRight)
                 else:
@@ -944,22 +973,22 @@ class PostProcessDialog(QDialog):
             self.pnmh_table.setRowHeight(row_idx, 30)
             
         self.pnmh_table.resizeColumnsToContents()
-        # Ép độ rộng để tiết kiệm diện tích nhưng vẫn đủ nhìn
-        self.pnmh_table.setColumnWidth(0, 50)   # X (Mở rộng một chút để dễ click)
-        self.pnmh_table.setColumnWidth(1, 100)  # Số chứng từ
-        self.pnmh_table.setColumnWidth(2, 90)   # Ngày hoá đơn
-        self.pnmh_table.setColumnWidth(3, 70)   # Bộ phận
+        # Ã‰p Ä‘á»™ rá»™ng Ä‘á»ƒ tiáº¿t kiá»‡m diá»‡n tÃ­ch nhÆ°ng váº«n Ä‘á»§ nhÃ¬n
+        self.pnmh_table.setColumnWidth(0, 50)   # X (Má»Ÿ rá»™ng má»™t chÃºt Ä‘á»ƒ dá»… click)
+        self.pnmh_table.setColumnWidth(1, 100)  # Sá»‘ chá»©ng tá»«
+        self.pnmh_table.setColumnWidth(2, 90)   # NgÃ y hoÃ¡ Ä‘Æ¡n
+        self.pnmh_table.setColumnWidth(3, 70)   # Bá»™ pháº­n
         self.pnmh_table.setColumnWidth(4, 120)  # Đối tượng
-        self.pnmh_table.setColumnWidth(5, 300)  # Diễn giải (Giảm còn 1/2)
-        self.pnmh_table.setColumnWidth(6, 100)  # Kho nhập
-        self.pnmh_table.setColumnWidth(7, 100)  # Mã vật tư
+        self.pnmh_table.setColumnWidth(5, 300)  # Diá»…n giáº£i (Giáº£m cÃ²n 1/2)
+        self.pnmh_table.setColumnWidth(6, 100)  # Kho nháº­p
+        self.pnmh_table.setColumnWidth(7, 100)  # MÃ£ váº­t tÆ°
         self.pnmh_table.setColumnWidth(8, 90)   # ĐVT
-        self.pnmh_table.setColumnWidth(9, 80)   # Số lượng
+        self.pnmh_table.setColumnWidth(9, 80)   # Sá»‘ lÆ°á»£ng
         self.pnmh_table.setColumnWidth(10, 100) # Đơn giá
         self.pnmh_table.setColumnWidth(11, 120) # Thành tiền
-        self.pnmh_table.setColumnWidth(12, 300) # Ghi chú (Note)
+        self.pnmh_table.setColumnWidth(12, 300) # Ghi chÃº (Note)
 
-        # Luôn có 1 dòng trống dưới cùng
+        # LuÃ´n cÃ³ 1 dÃ²ng trá»‘ng dưới cÃ¹ng
         self.pnmh_table.blockSignals(True)
         self._do_add_pnmh_row()
         self.pnmh_table.blockSignals(False)
@@ -1021,34 +1050,34 @@ class PostProcessDialog(QDialog):
                 self.chiphi_table.setItem(row_idx, ui_col_idx, item)
             self.chiphi_table.setRowHeight(row_idx, 30)
         self.chiphi_table.resizeColumnsToContents()
-        # Ép độ rộng cho các cột trong Chi phí
-        self.chiphi_table.setColumnWidth(0, 90)   # Ngày ghi sổ
-        self.chiphi_table.setColumnWidth(1, 100)  # Số chứng từ
-        self.chiphi_table.setColumnWidth(2, 70)   # Bộ phận
+        # Ã‰p Ä‘á»™ rá»™ng cho cÃ¡c cá»™t trong Chi phí
+        self.chiphi_table.setColumnWidth(0, 90)   # NgÃ y ghi sá»•
+        self.chiphi_table.setColumnWidth(1, 100)  # Sá»‘ chá»©ng tá»«
+        self.chiphi_table.setColumnWidth(2, 70)   # Bá»™ pháº­n
         self.chiphi_table.setColumnWidth(3, 120)  # Đối tượng
-        self.chiphi_table.setColumnWidth(4, 300)  # Diễn giải (Giảm còn 1/2)
-        self.chiphi_table.setColumnWidth(5, 70)   # TK Nợ
-        self.chiphi_table.setColumnWidth(6, 70)   # TK Có
+        self.chiphi_table.setColumnWidth(4, 300)  # Diá»…n giáº£i (Giáº£m cÃ²n 1/2)
+        self.chiphi_table.setColumnWidth(5, 70)   # TK Ná»£
+        self.chiphi_table.setColumnWidth(6, 70)   # TK CÃ³
         self.chiphi_table.setColumnWidth(7, 120)  # Thành tiền
-        self.chiphi_table.setColumnWidth(8, 300)  # Ghi chú (Note)
+        self.chiphi_table.setColumnWidth(8, 300)  # Ghi chÃº (Note)
 
-        # Luôn có 1 dòng trống dưới cùng (không có ảnh)
+        # LuÃ´n cÃ³ 1 dÃ²ng trá»‘ng dưới cÃ¹ng (khÃ´ng cÃ³ áº£nh)
         self._chiphi_image_filenames.append("")
         self.chiphi_table.blockSignals(True)
         self._do_add_chiphi_row()
         self.chiphi_table.blockSignals(False)
 
-    # ── Logic ──
+    # â”€â”€ Logic â”€â”€
     def _on_chiphi_cell_changed(self, row, col):
         self.chiphi_table.blockSignals(True)
         try:
-            if col == 0: # Cột Ngày ghi sổ
+            if col == 0: # Cá»™t NgÃ y ghi sá»•
                 item = self.chiphi_table.item(row, col)
                 if item:
                     item.setText(_fmt_date(item.text()))
                     
-            # Tự động chuyển Tên NCC -> Mã NCC
-            if col == 3: # Cột Mã đối tượng
+            # Tá»± Ä‘á»™ng chuyá»ƒn TÃªn NCC -> MÃ£ NCC
+            if col == 3: # Cá»™t MÃ£ Ä‘á»‘i tÆ°á»£ng
                 item = self.chiphi_table.item(row, col)
                 if item:
                     text = item.text().strip()
@@ -1059,7 +1088,7 @@ class PostProcessDialog(QDialog):
                                 break
             
             # Tự động điền TK Nợ (6421) và TK Có (331) khi điền xong Diễn giải
-            if col == 4: # Cột Diễn giải
+            if col == 4: # Cá»™t Diá»…n giáº£i
                 item = self.chiphi_table.item(row, col)
                 if item and item.text().strip():
                     it_no = self.chiphi_table.item(row, 5)
@@ -1087,13 +1116,13 @@ class PostProcessDialog(QDialog):
         # col 5: Diễn giải, 7: Mã VT, 8: ĐVT, 9: SL, 10: Đơn giá, 11: Thành tiền
         self.pnmh_table.blockSignals(True)
         try:
-            # 0. Format Ngày
-            if col == 2: # Cột Ngày hoá đơn
+            # 0. Format NgÃ y
+            if col == 2: # Cá»™t NgÃ y hoÃ¡ Ä‘Æ¡n
                 item = self.pnmh_table.item(row, col)
                 if item:
                     item.setText(_fmt_date(item.text()))
 
-            # 0.5 Tự động chuyển Tên NCC -> Mã NCC
+            # 0.5 Tá»± Ä‘á»™ng chuyá»ƒn TÃªn NCC -> MÃ£ NCC
             if col == 4: # Cột Đối tượng
                 item = self.pnmh_table.item(row, col)
                 if item:
@@ -1192,7 +1221,7 @@ class PostProcessDialog(QDialog):
             QMessageBox.warning(self, "Thiếu thông tin", "Dòng này chưa có Tên hàng hoặc Mã vật tư.")
             return
 
-        ocr_name = it_ocr_name.text().strip()    # what the invoice/OCR says → saved as Alias
+        ocr_name = it_ocr_name.text().strip()    # what the invoice/OCR says -> saved as Alias
         item_code = it_item_code.text().strip()   # item code from master list
         alias_unit = it_alias_unit.text().strip() if it_alias_unit else ""
 
@@ -1229,7 +1258,7 @@ class PostProcessDialog(QDialog):
             f"• Tên chuẩn (trong hệ thống):      {ref_name or '(không tìm thấy)'}\n"
             f"• Mã VT: {item_code}\n"
             f"• ĐVT kho: {master_unit}\n"
-            f"• ĐVT lóng: {alias_unit}\n"
+            f"• ĐVT lỏng: {alias_unit}\n"
             f"• Hệ số: {alias_factor}",
             QMessageBox.Yes | QMessageBox.No
         )
@@ -1378,20 +1407,20 @@ class PostProcessDialog(QDialog):
         self.pnmh_table.insertRow(row_idx)
         self.pnmh_table.setRowHeight(row_idx, 30)
         
-        # Checkbox (Sử dụng ClickableCheckBoxWidget để tăng diện tích click)
+        # Checkbox (Sá»­ dá»¥ng ClickableCheckBoxWidget Ä‘á»ƒ tÄƒng diá»‡n tÃ­ch click)
         chk = QCheckBox()
         chk.setStyleSheet("QCheckBox::indicator { width: 22px; height: 22px; }")
         chk_widget = ClickableCheckBoxWidget(chk)
         self.pnmh_table.setCellWidget(row_idx, 0, chk_widget)
         chk.stateChanged.connect(self._on_pnmh_check_changed)
         
-        # Items mặc định trống
+        # Items máº·c Ä‘á»‹nh trá»‘ng
         for c in range(1, self.pnmh_table.columnCount()):
             item = QTableWidgetItem("")
             item.setForeground(_COLOR_TEXT)
             self.pnmh_table.setItem(row_idx, c, item)
             
-        # Không thêm vào self._pnmh_rows và self._pnmh_row_indices ở đây để báo hiệu là dòng mới
+        # KhÃ´ng thÃªm vÃ o self._pnmh_rows vÃ  self._pnmh_row_indices á»Ÿ Ä‘Ã¢y Ä‘á»ƒ bÃ¡o hiá»‡u lÃ  dÃ²ng má»›i
 
     def _do_add_chiphi_row(self):
         row_idx = self.chiphi_table.rowCount()
@@ -1480,7 +1509,7 @@ class PostProcessDialog(QDialog):
             ws_rows_to_delete = sorted([self._pnmh_row_indices[i] for i in selected_ui_indices], reverse=True)
             for ws_row in ws_rows_to_delete:
                 pnmh_ws.delete_rows(ws_row)
-                # Cập nhật lại indices trong RAM để không bị lệch do xoá dòng
+                # Cáº­p nháº­t láº¡i indices trong RAM Ä‘á»ƒ khÃ´ng bá»‹ lá»‡ch do xoÃ¡ dÃ²ng
                 for i in range(len(self._pnmh_row_indices)):
                     if self._pnmh_row_indices[i] > ws_row:
                         self._pnmh_row_indices[i] -= 1
@@ -1514,16 +1543,16 @@ class PostProcessDialog(QDialog):
             if os.path.exists(self.pnmh_path):
                 wb = openpyxl.load_workbook(self.pnmh_path)
                 ws = wb.active
-                # Xóa dữ liệu cũ trong vùng làm việc (giả sử từ dòng 3)
-                # Nhưng thực tế chúng ta delete_rows khi transfer, nên ở đây chỉ cần ghi đè và append
+                # XÃ³a dá»¯ liá»‡u cÅ© trong vÃ¹ng lÃ m viá»‡c (giáº£ sá»­ tá»« dÃ²ng 3)
+                # NhÆ°ng thá»±c táº¿ chÃºng ta delete_rows khi transfer, nÃªn á»Ÿ Ä‘Ã¢y chá»‰ cáº§n ghi Ä‘Ã¨ vÃ  append
                 
-                # 1. Ghi đè các dòng hiện có
+                # 1. Ghi Ä‘Ã¨ cÃ¡c dÃ²ng hiá»‡n cÃ³
                 for ui_idx, ws_row in enumerate(self._pnmh_row_indices):
                     row_data = self._read_pnmh_row_from_table(ui_idx)
                     for col, val in row_data.items():
                         ws.cell(row=ws_row, column=col, value=val)
                 
-                # 2. Append các dòng mới thêm
+                # 2. Append cÃ¡c dÃ²ng má»›i thÃªm
                 if self.pnmh_table.rowCount() > len(self._pnmh_row_indices):
                     next_row = _find_first_empty_row(ws)
                     for ui_idx in range(len(self._pnmh_row_indices), self.pnmh_table.rowCount()):
@@ -1534,7 +1563,7 @@ class PostProcessDialog(QDialog):
                             ws.cell(row=next_row, column=col, value=val)
                         next_row += 1
 
-                # 3. Thực hiện xoá các dòng đã bị mark delete (xoá từ dưới lên trên)
+                # 3. Thá»±c hiá»‡n xoÃ¡ cÃ¡c dÃ²ng Ä‘Ã£ bá»‹ mark delete (xoÃ¡ tá»« dưới lÃªn trên)
                 for ws_row in sorted(self._deleted_pnmh_ws_rows, reverse=True):
                     ws.delete_rows(ws_row)
 
@@ -1545,13 +1574,13 @@ class PostProcessDialog(QDialog):
                 wb = openpyxl.load_workbook(self.chiphi_path)
                 ws = wb.active
                 
-                # 1. Ghi đè các dòng hiện có
+                # 1. Ghi Ä‘Ã¨ cÃ¡c dÃ²ng hiá»‡n cÃ³
                 for ui_idx, ws_row in enumerate(self._chiphi_row_indices):
                     row_data = self._read_chiphi_row_from_table(ui_idx)
                     for col, val in row_data.items():
                         ws.cell(row=ws_row, column=col, value=val)
                 
-                # 2. Append các dòng mới thêm
+                # 2. Append cÃ¡c dÃ²ng má»›i thÃªm
                 if self.chiphi_table.rowCount() > len(self._chiphi_row_indices):
                     next_row = _find_first_empty_row(ws)
                     for ui_idx in range(len(self._chiphi_row_indices), self.chiphi_table.rowCount()):
@@ -1562,7 +1591,7 @@ class PostProcessDialog(QDialog):
                             ws.cell(row=next_row, column=col, value=val)
                         next_row += 1
 
-                # 3. Thực hiện xoá các dòng đã bị mark delete (xoá từ dưới lên trên)
+                # 3. Thá»±c hiá»‡n xoÃ¡ cÃ¡c dÃ²ng Ä‘Ã£ bá»‹ mark delete (xoÃ¡ tá»« dưới lÃªn trên)
                 for ws_row in sorted(self._deleted_chiphi_ws_rows, reverse=True):
                     ws.delete_rows(ws_row)
 
@@ -1621,3 +1650,14 @@ class PostProcessDialog(QDialog):
         QScrollBar:horizontal { background: rgba(0,13,26,0.5); height: 8px; border-radius: 4px; }
         QScrollBar::handle:horizontal { background: #49769F; border-radius: 4px; min-width: 30px; }
         """
+
+
+    def _set_window_icon(self):
+        for name in ('app_logo.png', 'icon.ico'):
+            icon_path = get_asset_path(name)
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+                break
+
+
+

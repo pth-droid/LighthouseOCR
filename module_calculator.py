@@ -17,9 +17,9 @@ except ImportError:
 
 from core_rate_limiter import global_rate_limiter, EngineCancellationError
 from core_llm_client import parse_json_response, generate_with_fallback
+from path_utils import get_asset_path
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_CALC_SKILL_FILE = os.path.join(_BASE_DIR, "ocr_calculation_skill.md")
+_CALC_SKILL_FILE = get_asset_path("ocr_calculation_skill.md")
 from data_manager import DataManager
 
 

@@ -133,8 +133,8 @@ if errorlevel 1 (
     goto abort
 )
 
-echo [INFO] Cai PaddleOCR 3.5.0...
-"%PYTHON_EXE%" -m pip install "paddleocr==3.5.0"
+echo [INFO] Cai PaddleOCR 3.6.0...
+"%PYTHON_EXE%" -m pip install "paddleocr==3.6.0"
 if errorlevel 1 (
     echo [ERROR] Cai PaddleOCR that bai.
     goto abort

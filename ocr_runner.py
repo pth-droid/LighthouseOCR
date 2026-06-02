@@ -10,6 +10,7 @@ os.environ.pop("FLAGS_selected_gpus", None)  # must not be empty string — padd
 warnings.filterwarnings('ignore')
 logging.getLogger("ppocr").setLevel(logging.ERROR)
 logging.getLogger("paddleocr").setLevel(logging.ERROR)
+DEFAULT_OCR_RUNTIME_MODE = "stable"
 
 
 def _parse_major_version(version_text: str) -> int:
@@ -19,12 +20,39 @@ def _parse_major_version(version_text: str) -> int:
         return 0
 
 
-def _build_ocr_engine():
+def _normalize_ocr_runtime_mode(runtime_mode) -> str:
+    aliases = {
+        "": DEFAULT_OCR_RUNTIME_MODE,
+        "stable": "stable",
+        "cpu": "stable",
+        "safe": "stable",
+        "cpu_fast": "cpu_fast",
+        "fast": "cpu_fast",
+        "gpu": "gpu",
+        "cuda": "gpu",
+    }
+    return aliases.get(str(runtime_mode or "").strip().lower(), DEFAULT_OCR_RUNTIME_MODE)
+
+
+def _load_ocr_runtime_mode() -> str:
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "env", "lighthouse_config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            return _normalize_ocr_runtime_mode(cfg.get("ocr_mode"))
+        except Exception:
+            pass
+    return DEFAULT_OCR_RUNTIME_MODE
+
+
+def _build_ocr_engine(runtime_mode=None):
     import paddleocr
     from paddleocr import PaddleOCR
 
     version_str = getattr(paddleocr, "__version__", "0")
     major = _parse_major_version(version_str)
+    runtime_mode = _normalize_ocr_runtime_mode(runtime_mode)
     if major >= 3:
         # PaddleOCR 3.x (PP-OCRv5): let lang="vi" auto-select models.
         # Explicit model names are omitted — they changed between 3.0 and 3.5
@@ -34,9 +62,10 @@ def _build_ocr_engine():
             use_doc_orientation_classify=True,
             use_doc_unwarping=False,
             use_textline_orientation=False,
-            device="cpu",
+            device="gpu" if runtime_mode == "gpu" else "cpu",
+            enable_mkldnn=(runtime_mode == "cpu_fast"),
         )
-        print(f"[OCR] PaddleOCR {version_str} (PP-OCRv5, auto-model, lang=vi)")
+        print(f"[OCR] PaddleOCR {version_str} (PP-OCRv5, mode={runtime_mode}, lang=vi)")
         return ocr, "v3"
 
     ocr = PaddleOCR(
@@ -47,6 +76,51 @@ def _build_ocr_engine():
         use_angle_cls=True,
     )
     return ocr, "legacy"
+
+
+def _run_v3_ocr_with_fallback(image_path, requested_mode):
+    requested_mode = _normalize_ocr_runtime_mode(requested_mode)
+    modes_to_try = [requested_mode]
+    if requested_mode != DEFAULT_OCR_RUNTIME_MODE:
+        modes_to_try.append(DEFAULT_OCR_RUNTIME_MODE)
+
+    last_error = None
+    for index, runtime_mode in enumerate(modes_to_try):
+        try:
+            ocr, _ = _build_ocr_engine(runtime_mode)
+            result = ocr.predict(image_path)
+            if index > 0:
+                print(f"[OCR] Requested mode '{requested_mode}' failed. Fell back to stable CPU.")
+            return result
+        except Exception as exc:
+            last_error = exc
+            if index == len(modes_to_try) - 1:
+                raise
+            print(f"[OCR] Mode '{runtime_mode}' failed: {exc}. Retrying with stable CPU...", file=sys.stderr)
+
+    raise last_error or RuntimeError("OCR runtime mode fallback failed.")
+
+
+def _create_v3_engine_with_fallback(requested_mode):
+    requested_mode = _normalize_ocr_runtime_mode(requested_mode)
+    modes_to_try = [requested_mode]
+    if requested_mode != DEFAULT_OCR_RUNTIME_MODE:
+        modes_to_try.append(DEFAULT_OCR_RUNTIME_MODE)
+
+    last_error = None
+    for index, runtime_mode in enumerate(modes_to_try):
+        try:
+            ocr, engine_mode = _build_ocr_engine(runtime_mode)
+            if index > 0:
+                print(f"[OCR] Requested mode '{requested_mode}' failed during startup. Fell back to stable CPU.")
+            return ocr, engine_mode
+        except Exception as exc:
+            last_error = exc
+            if index == len(modes_to_try) - 1:
+                raise
+            print(f"[OCR] Mode '{runtime_mode}' failed during startup: {exc}. Retrying with stable CPU...", file=sys.stderr)
+
+    raise last_error or RuntimeError("OCR runtime mode startup fallback failed.")
 
 
 def _collect_from_legacy_result(result):
@@ -102,17 +176,24 @@ def _collect_from_v3_result(result):
 
 def run_ocr(image_path, output_path):
     try:
-        ocr, engine_mode = _build_ocr_engine()
+        requested_runtime_mode = _load_ocr_runtime_mode()
+        import paddleocr
+        major = _parse_major_version(getattr(paddleocr, "__version__", "0"))
         
         # Warmup mode
         if image_path == "--warmup":
+            if major >= 3:
+                _create_v3_engine_with_fallback(requested_runtime_mode)
+            else:
+                _build_ocr_engine(requested_runtime_mode)
             print("Warmup successful. Models are downloaded and ready.")
             sys.exit(0)
             
-        if engine_mode == "v3":
-            result = ocr.predict(image_path)
+        if major >= 3:
+            result = _run_v3_ocr_with_fallback(image_path, requested_runtime_mode)
             output_data = _collect_from_v3_result(result)
         else:
+            ocr, _ = _build_ocr_engine(requested_runtime_mode)
             result = ocr.ocr(image_path, cls=True)
             output_data = _collect_from_legacy_result(result)
                         

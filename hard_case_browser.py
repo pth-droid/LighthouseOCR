@@ -9,11 +9,11 @@ from PyQt5.QtWidgets import (
     QHeaderView, QScrollArea, QFrame, QWidget, QAbstractItemView, QTabWidget,
 )
 from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtGui import QColor, QPixmap, QTransform
+from PyQt5.QtGui import QColor, QPixmap, QTransform, QIcon
 
-from path_utils import get_root_dir
+from path_utils import get_root_dir, get_asset_path
 
-# ── Column schemas ─────────────────────────────────────────────────────────────
+# â”€â”€ Column schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _PNMH_COLS = [
     (2,  "SỐ CHỨNG TỪ"),
     (3,  "NGÀY HOÁ ĐƠN"),
@@ -43,7 +43,7 @@ _CHIPHI_COLS = [
 ]
 _CHIPHI_MONEY = {14}
 
-# ── Colors ─────────────────────────────────────────────────────────────────────
+# â”€â”€ Colors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _C_TEXT    = QColor("#BDD8E9")
 _C_CHG_BFG = QColor("#E8A87F")
 _C_CHG_BBG = QColor("#3A1A0A")
@@ -82,13 +82,14 @@ class HardCaseBrowserDialog(QDialog):
         self._drag_scroll_v = 0
 
         self.setWindowTitle("Xem Hard Cases đã thu thập")
+        self._set_window_icon()
         self.resize(1300, 750)
         self.setWindowState(Qt.WindowMaximized)
         self.setStyleSheet(self._stylesheet())
         self._build_ui()
         self._load_all_cases()
 
-    # ── Style ──────────────────────────────────────────────────────────────────
+    # â”€â”€ Style â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _stylesheet(self) -> str:
         return """
             QDialog {
@@ -139,7 +140,7 @@ class HardCaseBrowserDialog(QDialog):
             QSplitter::handle  { background: rgba(123,189,232,0.15); border-radius: 3px; }
         """
 
-    # ── Layout ─────────────────────────────────────────────────────────────────
+    # â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -151,7 +152,7 @@ class HardCaseBrowserDialog(QDialog):
 
         # Status bar: left=note, right=clicked cell content
         status_w = QWidget()
-        status_w.setFixedHeight(28)
+        status_w.setFixedHeight(32)
         status_w.setStyleSheet(
             "background:rgba(10,39,64,0.55); border-radius:4px;"
             " border:1px solid rgba(123,189,232,0.12);"
@@ -161,13 +162,13 @@ class HardCaseBrowserDialog(QDialog):
         sl.setSpacing(10)
         self.lbl_note = QLabel("—")
         self.lbl_note.setStyleSheet(
-            "color:#7BBDE8; font-size:12px; border:none; background:transparent;"
+            "color:#7BBDE8; font-size:14px; border:none; background:transparent;"
         )
         self.lbl_note.setMinimumWidth(0)
         self.lbl_cell = QLabel("")
         self.lbl_cell.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.lbl_cell.setStyleSheet(
-            "color:#BDD8E9; font-size:12px; border:none; background:transparent;"
+            "color:#BDD8E9; font-size:14px; border:none; background:transparent;"
         )
         self.lbl_cell.setMinimumWidth(0)
         sl.addWidget(self.lbl_note, 1)
@@ -190,12 +191,18 @@ class HardCaseBrowserDialog(QDialog):
                 self.pnmh_table, self._pnmh_row_map, r, c, pr
             )
         )
+        self.pnmh_table.itemSelectionChanged.connect(
+            lambda: self._update_selection_status(self.pnmh_table)
+        )
 
         self.chiphi_table = self._make_table(_CHIPHI_COLS)
         self.chiphi_table.currentCellChanged.connect(
             lambda r, c, pr, _pc: self._on_cell_changed(
                 self.chiphi_table, self._chiphi_row_map, r, c, pr
             )
+        )
+        self.chiphi_table.itemSelectionChanged.connect(
+            lambda: self._update_selection_status(self.chiphi_table)
         )
 
         self.left_tabs.addTab(self.pnmh_table,   "📁 PNMH (0)")
@@ -226,7 +233,7 @@ class HardCaseBrowserDialog(QDialog):
         t.verticalHeader().setVisible(False)
         t.setEditTriggers(QAbstractItemView.NoEditTriggers)
         t.setSelectionBehavior(QAbstractItemView.SelectItems)
-        t.setSelectionMode(QAbstractItemView.SingleSelection)
+        t.setSelectionMode(QAbstractItemView.ExtendedSelection)
         t.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         for c in range(1, len(cols) + 1):
             t.horizontalHeader().setSectionResizeMode(c, QHeaderView.Interactive)
@@ -278,7 +285,7 @@ class HardCaseBrowserDialog(QDialog):
         pl.addWidget(self.img_scroll, 1)
         return panel
 
-    # ── Load cases ─────────────────────────────────────────────────────────────
+    # â”€â”€ Load cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _load_all_cases(self):
         self.pnmh_table.setRowCount(0)
         self.chiphi_table.setRowCount(0)
@@ -387,13 +394,12 @@ class HardCaseBrowserDialog(QDialog):
             table.setItem(base_row,     c_idx, b_it)
             table.setItem(base_row + 1, c_idx, a_it)
 
-    # ── Cell selection ─────────────────────────────────────────────────────────
+    # â”€â”€ Cell selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _on_cell_changed(self, table, row_map, cur_row, cur_col, prev_row):
         if cur_row < 0:
             return
 
-        item = table.item(cur_row, cur_col)
-        self.lbl_cell.setText(item.text() if item else "")
+        self._update_selection_status(table)
 
         case = row_map.get(cur_row)
         if not case:
@@ -415,6 +421,43 @@ class HardCaseBrowserDialog(QDialog):
                 self._load_image(img_path)
                 return
         self._clear_image()
+    def _update_selection_status(self, table: QTableWidget):
+        indexes = table.selectedIndexes()
+        if not indexes:
+            self.lbl_cell.setText("")
+            return
+
+        first = indexes[0]
+        count = len(indexes)
+        if count == 1:
+            item = table.item(first.row(), first.column())
+            self.lbl_cell.setText(item.text() if item else "")
+            return
+
+        nums = []
+        for idx in indexes:
+            item = table.item(idx.row(), idx.column())
+            if not item:
+                continue
+            raw = (item.text() or "").strip()
+            if not raw:
+                continue
+            try:
+                nums.append(float(raw.replace(",", "").replace(" ", "")))
+            except ValueError:
+                pass
+
+        if nums:
+            self.lbl_cell.setText(f"Tổng: {sum(nums):,.2f} | {count} ô đã chọn")
+        else:
+            self.lbl_cell.setText(f"{count} ô đã chọn | Không có ô số để tính tổng")
+
+    def _set_window_icon(self):
+        for name in ("app_logo.png", "icon.ico"):
+            icon_path = get_asset_path(name)
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+                break
 
     def _open_current_folder(self):
         idx     = self.left_tabs.currentIndex()
@@ -428,7 +471,7 @@ class HardCaseBrowserDialog(QDialog):
         except (OSError, AttributeError) as exc:
             QMessageBox.critical(self, "Lỗi", f"Không thể mở thư mục:\n{exc}")
 
-    # ── Image viewer ───────────────────────────────────────────────────────────
+    # â”€â”€ Image viewer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _load_image(self, path: str):
         pix = QPixmap(path)
         if pix.isNull():
@@ -489,3 +532,4 @@ class HardCaseBrowserDialog(QDialog):
                 self.img_scroll.viewport().setCursor(Qt.ArrowCursor)
                 return True
         return super().eventFilter(obj, event)
+

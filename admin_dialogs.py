@@ -7,7 +7,7 @@ import os
 import json
 
 from PyQt5.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QGridLayout,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox,
     QScrollArea, QFrame, QWidget, QComboBox,
 )
@@ -92,9 +92,9 @@ class AdminConfigDialog(QDialog):
         self.app_config = app_config
         self.setWindowTitle("Thiết lập Hệ thống & AI Models")
         self.setMinimumWidth(600)
-        self.resize(600, 780)
         self.setModal(True)
         self._build_ui()
+        self._apply_default_dialog_size()
 
     def _build_ui(self):
         main_v_layout = QVBoxLayout(self)
@@ -105,8 +105,10 @@ class AdminConfigDialog(QDialog):
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setStyleSheet("background: transparent;")
         scroll.setMinimumHeight(1)  # let the footer button claim its space
+        self.scroll_area = scroll
 
         container = QWidget()
+        self.scroll_container = container
         layout = QVBoxLayout(container)
         layout.setSpacing(15)
         layout.setContentsMargins(30, 24, 30, 24)
@@ -199,9 +201,47 @@ class AdminConfigDialog(QDialog):
         msg_hint.setStyleSheet("color: #49769F; font-size: 12px; font-style: italic; line-height: 1.4;")
         layout.addWidget(msg_hint)
 
+        div_ocr = QFrame()
+        div_ocr.setFrameShape(QFrame.HLine)
+        div_ocr.setStyleSheet("background-color: rgba(123, 189, 232, 0.2);")
+        layout.addWidget(div_ocr)
+
+        title_ocr = QLabel("OCR Cục bộ (Tốc độ / Độ ổn định)")
+        title_ocr.setAlignment(Qt.AlignCenter)
+        title_ocr.setStyleSheet("font-size:16px; font-weight:800; color:#BDD8E9; margin-top:10px;")
+        layout.addWidget(title_ocr)
+
+        grid_ocr = QGridLayout()
+        grid_ocr.setSpacing(10)
+        grid_ocr.addWidget(QLabel("Chế độ chạy OCR:"), 0, 0)
+        self.cb_ocr_mode = QComboBox()
+        self.cb_ocr_mode.addItem("Ổn định (khuyến nghị)", "stable")
+        self.cb_ocr_mode.addItem("CPU nhanh", "cpu_fast")
+        self.cb_ocr_mode.addItem("GPU", "gpu")
+        current_ocr_mode = getattr(app_data, "ocr_mode", "stable")
+        current_index = self.cb_ocr_mode.findData(current_ocr_mode)
+        self.cb_ocr_mode.setCurrentIndex(current_index if current_index >= 0 else 0)
+        grid_ocr.addWidget(self.cb_ocr_mode, 0, 1)
+        layout.addLayout(grid_ocr)
+
+        msg_ocr_hint = QLabel(
+            "Ổn định: an toàn nhất, hợp cho đa số máy. "
+            "CPU nhanh: có thể nhanh hơn nhưng kén máy hơn. "
+            "GPU: nhanh nhất nếu máy có card và driver phù hợp; nếu thiếu, hệ thống sẽ tự quay về ổn định."
+        )
+        msg_ocr_hint.setWordWrap(True)
+        msg_ocr_hint.setStyleSheet("color: #49769F; font-size: 12px; font-style: italic; line-height: 1.4;")
+        layout.addWidget(msg_ocr_hint)
+
+        scroll.setWidget(container)
+        main_v_layout.addWidget(scroll)
+
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(30, 8, 30, 24)
+
         # Save button
-        btn = QPushButton("💾  Lưu Cấu Hình & Khóa Máy")
-        btn.setStyleSheet("""
+        self.btn_save = QPushButton("💾  Lưu Cấu Hình & Khóa Máy")
+        self.btn_save.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                     stop:0 #0A4174, stop:1 #49769F);
@@ -216,11 +256,14 @@ class AdminConfigDialog(QDialog):
                 color: #001D39;
             }
         """)
-        btn.clicked.connect(self._save)
-        layout.addWidget(btn)
+        self.btn_save.clicked.connect(self._save)
+        footer_layout.addWidget(self.btn_save)
+        main_v_layout.addLayout(footer_layout)
 
-        scroll.setWidget(container)
-        main_v_layout.addWidget(scroll)
+    def _apply_default_dialog_size(self):
+        desired_width = 680
+        desired_height = self.scroll_container.sizeHint().height() + self.btn_save.sizeHint().height() + 120
+        self.resize(max(desired_width, self.minimumWidth()), max(desired_height, 860))
 
     def _open_hard_case_browser(self):
         try:
@@ -272,6 +315,7 @@ class AdminConfigDialog(QDialog):
             "hardware_id":    hwid,
             "api_key":        api_key,
             "admin_password": final_pass,
+            "ocr_mode":       self.cb_ocr_mode.currentData() or "stable",
             "models": {
                 "light_primary":  self.cb_light_p.currentText().strip(),
                 "light_fallback": self.cb_light_f.currentText().strip(),
@@ -284,6 +328,7 @@ class AdminConfigDialog(QDialog):
             "hardware_id":    hwid,
             "api_key":        obscure_data(api_key, hwid),
             "admin_password": obscure_data(final_pass, STATIC_SALT),
+            "ocr_mode":       config_data["ocr_mode"],
             "models":         config_data["models"]
         }
 
@@ -295,9 +340,10 @@ class AdminConfigDialog(QDialog):
 
             from data_manager import app_data
             app_data.models.update(config_data["models"])
+            app_data.ocr_mode = config_data["ocr_mode"]
 
             QMessageBox.information(self, "Thành công",
-                "Đã lưu API Key, Mật khẩu và cấu hình AI Models!")
+                "Đã lưu API Key, Mật khẩu, AI Models và chế độ Local OCR!")
             self.config_saved.emit(config_data)
             self.accept()
         except Exception as e:
