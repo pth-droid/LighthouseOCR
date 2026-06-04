@@ -52,8 +52,8 @@ class FlashTextStructurer:
         combined_prompt = f"{self.prompt_template}\n\nRAW_TEXT_INPUT_FROM_PADDLEOCR:\n{raw_paddle_text}"
 
         models_to_try = [
-            {"name": self.data_store.models.get("light_primary"), "label": "Flash 3.1 Lite", "is_primary": True},
-            {"name": self.data_store.models.get("light_fallback"), "label": "Flash 2.5 Fallback", "is_primary": False}
+            {"name": self.data_store.models.get("light_primary"), "label": "Gemini 3.1 Flash-Lite", "is_primary": True},
+            {"name": self.data_store.models.get("light_fallback"), "label": "Gemini 2.5 Flash Fallback", "is_primary": False}
         ]
         raw_text, model_name, usage_meta = generate_with_fallback(
             self.client, models_to_try,

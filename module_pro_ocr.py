@@ -50,8 +50,8 @@ class ProVisionOCR:
             status_callback("🧠 Nét mờ/Tay: Kích hoạt LLM Flash 3.1 Vision càn quét bức ảnh...")
             
         models_to_try = [
-            {"name": self.data_store.models.get("pro_primary"), "label": "Flash 3.1 (Vision)", "is_primary": True},
-            {"name": self.data_store.models.get("pro_fallback"), "label": "Pro 2.5 (Vision Fallback)", "is_primary": False}
+            {"name": self.data_store.models.get("pro_primary"), "label": "Gemini 3.5 Flash Vision", "is_primary": True},
+            {"name": self.data_store.models.get("pro_fallback"), "label": "Gemini 3.1 Pro Preview Vision Fallback", "is_primary": False}
         ]
         raw_text, model_name, usage_meta = generate_with_fallback(
             self.client, models_to_try,

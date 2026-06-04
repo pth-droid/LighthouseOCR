@@ -27,6 +27,16 @@ class AdminConfigDialogTests(unittest.TestCase):
         self.assertIsNotNone(scroll)
         self.assertEqual(scroll.verticalScrollBar().maximum(), 0)
 
+    def test_pipeline_mode_selector_defaults_to_structure_pipeline(self):
+        dialog = AdminConfigDialog(None, {"api_key": "demo", "admin_password": "admin"})
+        self.assertTrue(hasattr(dialog, "cb_ocr_pipeline_mode"))
+        self.assertEqual(dialog.cb_ocr_pipeline_mode.currentData(), "structure_default")
+
+    def test_pipeline_mode_selector_keeps_legacy_available(self):
+        dialog = AdminConfigDialog(None, {"api_key": "demo", "admin_password": "admin"})
+        index = dialog.cb_ocr_pipeline_mode.findData("legacy_hybrid")
+        self.assertGreaterEqual(index, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

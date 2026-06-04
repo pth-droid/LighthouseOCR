@@ -16,19 +16,33 @@ logic:
       - "Step 7: Final PIL resize safety pass (LANCZOS) — usually no-op since Step 4a already bounded the size."
   
   ocr_extraction:
-    router: "Local PaddleOCR Sandbox (portable python_env, PP-OCRv5 target with legacy fallback)"
-    path_a:
-      condition: "Text confidence > 90%"
-      engine: "Configurable Light Model (default: Gemini 3.1 Flash-Lite; set via lighthouse_config.json)"
-      action: "Receive raw text from PaddleOCR (processed image) and inject master dictionaries. Structure into JSON including department extraction."
-    path_b:
-      condition: "Text confidence < 90% or empty (Handwritten/Muffled)"
-      engine: "Configurable Pro Model (default: Gemini 3.1 Flash Vision; set via lighthouse_config.json)"
-      action: "Receive warped top-down image + master dictionaries. Execute vision-based extraction including department extraction."
+    router: "Default: PP-StructureV3 pipeline (ocr_pipeline_structure.py); selectable legacy_hybrid keeps old Paddle + Gemini route."
+    default_path:
+      engine: "PP-StructureV3 + PP-OCRv5 via isolated ocr_structure_runner.py subprocess"
+      action: "Analyze layout, text, and tables locally. Normalize the result into raw_text, tokens, regions, and tables without retaining large debug image payloads."
+    legacy_path:
+      condition: "User selects legacy_hybrid in system settings"
+      engine: "Old PaddleOCR text route with Flash/Pro Gemini fallback"
+      action: "Kept available for compatibility; not the default route."
+  
+  business_kie:
+    engine: "Local DataManager-backed KIE"
+    action:
+      - "Extract supplier, date, department, items, and totals from normalized PP-Structure text/table output."
+      - "Use Data structure supplier list, item master, warehouse mapping, and alias CSV as local business knowledge."
+  
+  supplier_enrichment:
+    engine: "Local-first supplier resolver"
+    action:
+      - "Runs after invoice_json_builder and before validation/calculation/export."
+      - "Preserves supplier_name_code when read directly from the invoice."
+      - "If supplier is missing, infer NCC from supplier sample products only when at least two item evidences point to the same supplier and the winner is clear."
+      - "Writes _supplier_resolution.source, confidence, and evidence for review."
+      - "Leaves NCC empty when evidence is weak to avoid false positives."
   
   data_calculation:
-    engine: "Configurable Light Model (default: Gemini 3.1 Flash-Lite; set via lighthouse_config.json)"
-    action: "Inference of missing Suppliers based on item context from Master List. Automatic detection of VAT-inclusive line totals to prevent double-counting. Calculation of VAT, discounts, and adjusted accounting unit price per item, while preserving original invoice price in base fields and writing a standardized pricing formula into notes. Preserves 'department' field from OCR output."
+    engine: "Python rules in module_calculator.py"
+    action: "Automatic detection of VAT-inclusive line totals to prevent double-counting. Calculation of VAT, discounts, shipping allocation, x1000 shorthand, and adjusted accounting unit price per item, while preserving original invoice price in base fields and writing a standardized pricing formula into notes. Supplier reverse lookup is not calculator responsibility."
   
   data_mapping:
     engine: "Hybrid: Local Fuzzy (rapidfuzz) + Configurable Light Model"
@@ -39,6 +53,7 @@ logic:
       - "5-Tier Reasoning Chain: LLM mapping uses prioritized context: (1) Department, (2) Supplier Identity, (3) Supplier Sample Products, (4) Cross-Item Context (entire invoice list), and (5) Price Comparison against Master List reference prices."
       - "Unit Conversion: Automatically converts invoice units (Dvt0) to warehouse base units (Dvt) using conversion factors (He_So0) from the Master List."
       - "Smart Routing: High-confidence matches go to PNMH; unmapped items with known suppliers are routed to the Expense template; risky/ambiguous items stay in PNMH with yellow highlighting."
+      - "LLM usage: only unresolved item mapping falls back to Gemini Flash; supplier enrichment is local-first and calculator does not call LLM for NCC."
   
   export:
     tool: "openpyxl"

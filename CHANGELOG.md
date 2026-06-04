@@ -6,7 +6,7 @@ The app version is defined in a **single place**:
 
 ```python
 # main_app_qt.py, line ~58
-APP_VERSION = "v7.3"
+APP_VERSION = "v7.4"
 ```
 
 This constant is automatically displayed in the bottom-left footer of the main window:
@@ -20,6 +20,18 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`.
 
 ---
 
+## [v7.4] — 2026-06-04
+
+### Added / Fixed
+
+- **Version bump** (`main_app_qt.py`, `claude.md`): Updated runtime metadata to `v7.4`.
+- **Model discovery price labels** (`data_manager.py`, `main_app_qt.py`, `admin_dialogs.py`): Dynamic Gemini model discovery now shows known input/output token prices beside model names while saving only the clean model id to config.
+- **Retired model guard** (`data_manager.py`, `Deploy_Build.ps1`): Release defaults and loaded config now replace retired/unsafe preview defaults such as `gemini-2.5-flash-preview-04-17`.
+- **Dist logo packaging fix** (`LighthouseOCR.spec`): `app_logo.png` is now bundled so the main UI logo appears in packaged builds.
+- **Post-process image preview fix** (`post_process_dialog.py`): Review dialog resolves images from the Excel folder or sibling `DONE` folder and auto-selects the first row with an image.
+
+---
+
 ## [v7.3] — 2026-05-30
 
 ### Added / Fixed
@@ -27,7 +39,7 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`.
 - **Version bump** (`main_app_qt.py`, `claude.md`): Updated runtime metadata to `v7.3`.
 - **Single source-of-truth enforcement** (`Deploy_Build.ps1`): Deployment banner now reads `APP_VERSION` from `main_app_qt.py` instead of hardcoded script version text.
 - **Client dependency self-heal** (`Deploy_Build.ps1`): Build output now includes `Setup_Moi_Truong.bat` and a generated launcher `LighthouseOCR_Start.bat` that preflights `env\\python.exe` and can trigger setup when runtime dependencies are missing.
-- **PaddleOCR stack update** (`README.md`, `Setup_Moi_Truong.bat`, `Setup_Nguon.bat`, runtime env): Updated target stack to `paddleocr==3.6.0` with `paddlepaddle==3.3.1`.
+- **PaddleOCR stack update** (`README.md`, `Setup_Moi_Truong.bat`, `Setup_Nguon.bat`, runtime env): Updated target stack to `paddleocr[doc-parser]==3.6.0`, `paddlex[ocr]==3.6.1`, and Windows CPU-safe `paddlepaddle==3.2.0`.
 
 ---
 

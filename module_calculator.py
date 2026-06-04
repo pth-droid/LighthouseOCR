@@ -24,24 +24,8 @@ from data_manager import DataManager
 
 
 def _should_skip_llm(raw_json_obj: dict) -> bool:
-    """
-    Kiểm tra xem có cần gọi LLM Calculator không.
-    Trả về True (bỏ qua LLM) khi:
-      - supplier_name_code đã được OCR xác định (không cần Reverse Lookup)
-    Gọi LLM khi:
-      - supplier_name_code trống/mua lẻ → LLM cần Reverse Lookup từ danh sách sản phẩm
-
-    Lý do thiết kế: _normalize_pricing_basis() đã xử lý được toàn bộ toán tài chính
-    (VAT, chiết khấu, phí vận chuyển) bằng Python regex thuần. Nhiệm vụ DUY NHẤT
-    mà LLM làm được mà Python không làm được là suy ngược mã NCC từ danh sách sản phẩm.
-    """
-    supplier_code = str(
-        (raw_json_obj.get("supplier_info") or {}).get("supplier_name_code") or ""
-    ).strip().lower()
-    UNKNOWN_CODES = ("", "null", "none", "mua le", "mua lẻ", "n/a")
-    if supplier_code in UNKNOWN_CODES:
-        return False  # Cần LLM để Reverse Lookup NCC
-    return True       # NCC đã biết → bỏ qua LLM, Python tự tính
+    # Supplier reverse lookup now belongs to KIE/enrichment, not the calculator.
+    return True
 
 
 
@@ -444,8 +428,8 @@ class LLMCalculator:
 
         try:
             models_to_try = [
-                {"name": self.data_store.models.get("light_primary"), "label": "Flash 3.1 Lite", "is_primary": True},
-                {"name": self.data_store.models.get("light_fallback"), "label": "Flash 2.5 Fallback", "is_primary": False}
+                {"name": self.data_store.models.get("light_primary"), "label": "Gemini 3.1 Flash-Lite", "is_primary": True},
+                {"name": self.data_store.models.get("light_fallback"), "label": "Gemini 2.5 Flash Fallback", "is_primary": False}
             ]
             raw_text, _, usage_meta = generate_with_fallback(
                 self.client, models_to_try,
