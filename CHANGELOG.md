@@ -29,6 +29,8 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`.
 - **Retired model guard** (`data_manager.py`, `Deploy_Build.ps1`): Release defaults and loaded config now replace retired/unsafe preview defaults such as `gemini-2.5-flash-preview-04-17`.
 - **Dist logo packaging fix** (`LighthouseOCR.spec`): `app_logo.png` is now bundled so the main UI logo appears in packaged builds.
 - **Post-process image preview fix** (`post_process_dialog.py`): Review dialog resolves images from the Excel folder or sibling `DONE` folder and auto-selects the first row with an image.
+- **Hard-case Vision fallback** (`ocr_pipeline_structure.py`): When PP-StructureV3/local KIE is very weak or the light fallback still returns no items/total, the default pipeline escalates to the Pro Vision model instead of sending an empty invoice to review.
+- **Empty-review guard** (`ocr_pipeline_structure.py`): If all fallback layers still produce no line items, the invoice is treated as not processed so the app does not open a blank post-process review.
 
 ---
 

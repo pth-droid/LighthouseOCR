@@ -5,7 +5,7 @@
 
 Ứng dụng OCR hóa đơn tự động cho nghiệp vụ nhập kho (PNMH) và nhập chi phí, sử dụng PaddleOCR + Google Gemini.
 
-Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction, business KIE, local-first supplier enrichment, Python financial calculation, and Gemini Flash only as fallback when local validation or item mapping is weak. Legacy Paddle + Gemini mode remains selectable in system settings.
+Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction, business KIE, local-first supplier enrichment, Python financial calculation, and Gemini Flash as the first text fallback when local validation or item mapping is weak. If local OCR is extremely weak or the light fallback still returns no line items/total amount, the pipeline escalates to the Pro Vision model so handwritten/creased invoices do not enter review as empty JSON. If all fallback layers still produce no line items, the app keeps the invoice out of blank post-process review. Legacy Paddle + Gemini mode remains selectable in system settings.
 
 Dynamic Gemini model discovery shows known input/output token prices beside model names in the configuration UI. The app still saves only the clean model id, so labels with prices are safe for API calls.
 

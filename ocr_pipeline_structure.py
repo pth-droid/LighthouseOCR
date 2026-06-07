@@ -7,6 +7,54 @@ def _should_keep_processing(stop_event):
     return not (stop_event and stop_event.is_set())
 
 
+def _validation_confidence(validation_report):
+    try:
+        return float(validation_report.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _missing_vision_critical_fields(validation_report):
+    missing = set(validation_report.get("missing_required_fields") or [])
+    return bool(missing.intersection({"items", "total_amount"}))
+
+
+def _should_use_direct_vision_fallback(validation_report):
+    return (
+        _missing_vision_critical_fields(validation_report)
+        and _validation_confidence(validation_report) < 0.50
+    )
+
+
+def _should_use_vision_after_light_fallback(validation_report):
+    return _missing_vision_critical_fields(validation_report)
+
+
+def _has_reviewable_invoice_data(invoice_json):
+    return bool(invoice_json.get("items") or [])
+
+
+def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_callback, stage, validation_report):
+    from module_pro_ocr import get_pro_ocr
+    from supplier_enrichment import enrich_supplier
+
+    pro_engine = get_pro_ocr(api_key, data_store)
+    result = pro_engine.extract_image_directly(
+        image,
+        stop_event=stop_event,
+        status_callback=status_callback,
+    )
+    result = enrich_supplier(result, data_store)
+    result.setdefault("_structure_pipeline", {})
+    result["_structure_pipeline"].update({
+        "fallback_used": True,
+        "pro_vision_fallback_used": True,
+        "fallback_stage": stage,
+        "validation_before_pro_vision": validation_report,
+    })
+    return result
+
+
 def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
     def _log(msg):
         signals.log.emit(msg)
@@ -81,7 +129,18 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
             validation = validate_invoice_json(json_rough)
             json_rough["_structure_pipeline"]["validation"] = validation
 
-            if should_use_light_fallback(validation):
+            if _should_use_direct_vision_fallback(validation):
+                _log("Ket qua local qua yeu va thieu hang/tong tien -> dung Vision model nang.")
+                json_rough = _run_pro_vision_fallback(
+                    image,
+                    api_key,
+                    app_data,
+                    stop_event,
+                    _log,
+                    "direct_after_structure",
+                    validation,
+                )
+            elif should_use_light_fallback(validation):
                 _log("Ket qua local con yeu -> dung model nhe lam fallback.")
                 json_rough = run_light_fallback(
                     normalized,
@@ -92,6 +151,24 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     status_callback=_log,
                 )
                 json_rough = enrich_supplier(json_rough, app_data)
+                light_validation = validate_invoice_json(json_rough)
+                json_rough.setdefault("_structure_pipeline", {})
+                json_rough["_structure_pipeline"]["validation"] = light_validation
+                json_rough["_structure_pipeline"]["light_fallback_used"] = True
+                json_rough["_structure_pipeline"]["validation_before_light_fallback"] = validation
+                if _should_use_vision_after_light_fallback(light_validation):
+                    _log("Fallback nhe van thieu hang/tong tien -> dung Vision model nang.")
+                    json_rough = _run_pro_vision_fallback(
+                        image,
+                        api_key,
+                        app_data,
+                        stop_event,
+                        _log,
+                        "after_light_fallback",
+                        light_validation,
+                    )
+                    json_rough["_structure_pipeline"]["light_fallback_used"] = True
+                    json_rough["_structure_pipeline"]["validation_before_light_fallback"] = validation
             else:
                 _log("Ket qua local du manh -> khong can fallback model nhe.")
 
@@ -101,6 +178,11 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                 stop_event=stop_event,
                 status_callback=_log,
             )
+            if not _has_reviewable_invoice_data(invoice_json):
+                raise RuntimeError(
+                    "Khong trich xuat duoc dong hang nao sau tat ca fallback; "
+                    "giu anh trong INPUT de xu ly lai."
+                )
             invoice_json.setdefault("_structure_pipeline", {})
             invoice_json["_structure_pipeline"].update(json_rough.get("_structure_pipeline", {}))
 
