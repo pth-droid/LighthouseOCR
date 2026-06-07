@@ -31,10 +31,18 @@ logic:
       - "Extract supplier, date, department, items, and totals from normalized PP-Structure text/table output."
       - "Use Data structure supplier list, item master, warehouse mapping, and alias CSV as local business knowledge."
   
+  local_evidence_rescue:
+    engine: "Local supplier evidence rescue"
+    action:
+      - "Runs when supplier is missing or looks like a salesperson/NVBH/HRC/driver/delivery line."
+      - "Checks normalized structure text first, then focused local header crops with the light local Paddle OCR engine."
+      - "Accepts supplier only when there is strong header/company/tax-id style evidence from the supplier master list."
+      - "Leaves NCC empty instead of escalating to Pro Vision only because of a suspicious staff line."
+
   supplier_enrichment:
     engine: "Local-first supplier resolver"
     action:
-      - "Runs after invoice_json_builder and before validation/calculation/export."
+      - "Runs after local_evidence_rescue and before validation/calculation/export."
       - "Preserves supplier_name_code when read directly from the invoice."
       - "If supplier is missing, infer NCC from supplier sample products only when at least two item evidences point to the same supplier and the winner is clear."
       - "Writes _supplier_resolution.source, confidence, and evidence for review."

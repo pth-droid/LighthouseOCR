@@ -59,6 +59,33 @@ class StructureInvoiceJsonTests(unittest.TestCase):
         self.assertTrue(report["can_use_local_result"])
         self.assertEqual(report["status"], "pass")
 
+    def test_validation_requires_item_pricing_for_local_pass(self):
+        invoice = build_invoice_json(
+            kie_result={
+                "supplier": {
+                    "supplier_name_code": "COHA",
+                    "supplier_name_raw": "Co Ha Tap Hoa",
+                    "confidence": 0.9,
+                },
+                "transaction": {"department": "BEP"},
+                "items": [{
+                    "product_name": "Ca rot baby",
+                    "unit": "Gram",
+                    "quantity": None,
+                    "unit_price": None,
+                    "total_price": None,
+                }],
+                "totals": {"total_amount": 250000},
+                "warnings": [],
+            },
+            confidence_score=0.88,
+        )
+
+        report = validate_invoice_json(invoice)
+
+        self.assertFalse(report["can_use_local_result"])
+        self.assertIn("item_pricing", report["missing_required_fields"])
+
 
 if __name__ == "__main__":
     unittest.main()

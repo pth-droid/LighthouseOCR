@@ -31,6 +31,10 @@ To bump the version, change `APP_VERSION` in `main_app_qt.py`.
 - **Post-process image preview fix** (`post_process_dialog.py`): Review dialog resolves images from the Excel folder or sibling `DONE` folder and auto-selects the first row with an image.
 - **Hard-case Vision fallback** (`ocr_pipeline_structure.py`): When PP-StructureV3/local KIE is very weak or the light fallback still returns no items/total, the default pipeline escalates to the Pro Vision model instead of sending an empty invoice to review.
 - **Empty-review guard** (`ocr_pipeline_structure.py`): If all fallback layers still produce no line items, the invoice is treated as not processed so the app does not open a blank post-process review.
+- **Structure validation hardening** (`invoice_validation.py`, `business_kie.py`): Local PP-StructureV3 results now require item pricing before being accepted, and total parsing ignores phone/portal/document numbers.
+- **OCR item matching hardening** (`core_excel_mapper.py`, `item_matcher.py`): Common OCR typo `dura` is normalized to `dua`, long item names can match by meaningful partial tokens, and short generic names no longer get unsafe token-set matches.
+- **Local supplier evidence rescue** (`local_evidence_rescue.py`, `ocr_pipeline_structure.py`, `supplier_enrichment.py`): Supplier values that look like salesperson/NVBH/HRC lines are treated as suspicious. The structure pipeline now checks local structure text and focused header crops for supplier/header evidence before accepting NCC. If no strong local evidence exists, NCC is left empty instead of escalating to Pro Vision only because of a suspicious staff line.
+- **Mixed invoice routing fix** (`core_excel_mapper.py`): Unmapped items stay in PNMH when the same invoice already has mapped inventory items, preventing product rows from being moved to Chi phí just because one item is missing from the master list.
 
 ---
 

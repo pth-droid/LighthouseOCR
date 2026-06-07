@@ -5,7 +5,7 @@
 
 Ứng dụng OCR hóa đơn tự động cho nghiệp vụ nhập kho (PNMH) và nhập chi phí, sử dụng PaddleOCR + Google Gemini.
 
-Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction, business KIE, local-first supplier enrichment, Python financial calculation, and Gemini Flash as the first text fallback when local validation or item mapping is weak. If local OCR is extremely weak or the light fallback still returns no line items/total amount, the pipeline escalates to the Pro Vision model so handwritten/creased invoices do not enter review as empty JSON. If all fallback layers still produce no line items, the app keeps the invoice out of blank post-process review. Legacy Paddle + Gemini mode remains selectable in system settings.
+Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction, business KIE, local evidence rescue, local-first supplier enrichment, Python financial calculation, and Gemini Flash as the first text fallback when local validation or item mapping is weak. Local structure output must include line-item pricing before it is accepted as strong enough. Supplier values that look like salesperson/NVBH/HRC lines are treated as suspicious; the app first checks local header/supplier evidence and leaves NCC empty if no strong evidence is found. If local OCR is extremely weak or the light fallback returns no line items/total amount, the pipeline escalates to the Pro Vision model so handwritten/creased invoices do not enter review as empty JSON. If all fallback layers still produce no line items, the app keeps the invoice out of blank post-process review. During Excel export, unmapped items stay in PNMH when the same invoice already has mapped inventory items, so a missing master alias does not silently move a product row to Chi phí. Legacy Paddle + Gemini mode remains selectable in system settings.
 
 Dynamic Gemini model discovery shows known input/output token prices beside model names in the configuration UI. The app still saves only the clean model id, so labels with prices are safe for API calls.
 
@@ -207,6 +207,7 @@ LighthouseOCR/
 
 3. **KIE + Enrichment + Calculator**:
    - `business_kie.py`: extracts supplier, date, department, items, and totals from PP-Structure output plus master data.
+   - `local_evidence_rescue.py`: when NCC is missing or suspicious, checks local OCR text and focused header crops for supplier evidence before any LLM escalation.
    - `supplier_enrichment.py`: if NCC is missing, infers it only when multiple item evidences point clearly to one supplier; writes `_supplier_resolution`.
    - `module_calculator.py`: handles VAT, discount, shipping, x1000 shorthand, and accounting unit price. It does not call LLM to infer NCC.
 

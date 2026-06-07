@@ -59,6 +59,20 @@ class SupplierEnrichmentTests(unittest.TestCase):
         self.assertEqual(enriched["supplier_info"]["supplier_name_code"], "DAIRY")
         self.assertEqual(enriched["_supplier_resolution"]["source"], "ocr_header")
 
+    def test_rejects_salesperson_line_as_supplier_even_when_code_is_known(self):
+        invoice = {
+            "supplier_info": {
+                "supplier_name_code": "DAIRY",
+                "supplier_name_raw": "Hin HRC DN",
+            },
+            "items": [{"product_name": "Unknown"}],
+        }
+
+        enriched = enrich_supplier(invoice, FakeDataStore())
+
+        self.assertIsNone(enriched["supplier_info"]["supplier_name_code"])
+        self.assertEqual(enriched["_supplier_resolution"]["source"], "unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

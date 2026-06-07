@@ -25,8 +25,7 @@ def validate_invoice_json(invoice_json):
     except (TypeError, ValueError):
         confidence = 0.0
 
-    required_missing = [field for field in missing if field != "item_pricing"]
-    can_use = not required_missing and confidence >= 0.70
+    can_use = not missing and confidence >= 0.70
     return {
         "status": "pass" if can_use else "warning",
         "can_use_local_result": can_use,

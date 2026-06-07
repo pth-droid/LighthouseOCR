@@ -22,7 +22,7 @@ def _dept_from_group(group):
 def _parse_money_values(text):
     values = []
     for token in re.findall(r"\d[\d.,]{2,}", str(text or "")):
-        cleaned = token.replace(".", "").replace(",", "")
+        cleaned = _normalize_money_token(token)
         try:
             value = float(cleaned)
         except ValueError:
@@ -32,16 +32,73 @@ def _parse_money_values(text):
     return values
 
 
+def _normalize_money_token(token):
+    text = str(token or "").strip()
+    separators = [idx for idx, ch in enumerate(text) if ch in ".,"] 
+    if not separators:
+        return re.sub(r"\D+", "", text)
+
+    last_sep = separators[-1]
+    before = text[:last_sep]
+    after = text[last_sep + 1:]
+    if len(after) == 2 and any(ch in before for ch in ".,"):
+        integer_part = re.sub(r"\D+", "", before)
+        decimal_part = re.sub(r"\D+", "", after)
+        return f"{integer_part}.{decimal_part}"
+
+    return text.replace(".", "").replace(",", "")
+
+
+def _line_can_contain_total_money(line):
+    cleaned = _clean(line)
+    non_money_keywords = (
+        "dien thoai",
+        "dtgh",
+        "portal",
+        "ma so thue",
+        "mst",
+        "dia chi",
+        "ngay",
+        "date",
+        "so hd",
+        "s6 hd",
+        "po",
+    )
+    return not any(keyword in cleaned for keyword in non_money_keywords)
+
+
+def _parse_line_money_values(line):
+    if not _line_can_contain_total_money(line):
+        return []
+    values = []
+    for value in _parse_money_values(line):
+        # Phone numbers and document ids often become 9-10 digit "money" values.
+        if value >= 100_000_000:
+            continue
+        values.append(value)
+    return values
+
+
 def _parse_totals(text):
     lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
-    total_keywords = ("tong cong", "thanh tien", "can thanh toan", "tong tien")
-    for line in reversed(lines):
+    total_keywords = ("tong cong", "can thanh toan", "tong tien", "tong tien thanh toan", "tong tien thanh tan")
+    for idx in range(len(lines) - 1, -1, -1):
+        line = lines[idx]
         clean_line = _clean(line)
         if any(keyword in clean_line for keyword in total_keywords):
-            values = _parse_money_values(line)
+            values = _parse_line_money_values(line)
+            if not values:
+                nearby = []
+                for neighbor_idx in range(max(0, idx - 3), min(len(lines), idx + 4)):
+                    if neighbor_idx == idx:
+                        continue
+                    nearby.extend(_parse_line_money_values(lines[neighbor_idx]))
+                values = nearby
             if values:
                 return {"total_amount": values[-1]}
-    values = _parse_money_values(text)
+    values = []
+    for line in lines:
+        values.extend(_parse_line_money_values(line))
     return {"total_amount": max(values)} if values else {}
 
 

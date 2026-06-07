@@ -19,6 +19,25 @@ def _is_known_supplier(code):
     return _clean(code) not in UNKNOWN_SUPPLIER_CODES
 
 
+def _looks_like_salesperson_supplier(raw_name):
+    raw_clean = _clean(raw_name)
+    if not raw_clean:
+        return False
+    company_markers = (
+        "cong ty",
+        "tnhh",
+        "co phan",
+        "chi nhanh",
+        "doanh nghiep",
+        "cua hang",
+        "hop tac xa",
+    )
+    if any(marker in raw_clean for marker in company_markers):
+        return False
+    salesperson_markers = ("nvbh", "hrc", "ten nv", "nhan vien", "sales", "giao nhan")
+    return any(marker in raw_clean for marker in salesperson_markers)
+
+
 def _split_product_samples(text):
     samples = []
     for token in re.split(r"[,;/|]+", str(text or "")):
@@ -121,11 +140,15 @@ def enrich_supplier(invoice_json, data_store):
     supplier = enriched.setdefault("supplier_info", {})
     code = supplier.get("supplier_name_code")
 
-    if _is_known_supplier(code):
+    if _is_known_supplier(code) and not _looks_like_salesperson_supplier(supplier.get("supplier_name_raw")):
         if not supplier.get("supplier_name_raw"):
             supplier["supplier_name_raw"] = getattr(data_store, "suppliers_dict", {}).get(code)
         _set_resolution(enriched, "ocr_header", 0.95)
         return enriched
+
+    if _looks_like_salesperson_supplier(supplier.get("supplier_name_raw")):
+        supplier["supplier_name_code"] = None
+        supplier["supplier_name_raw"] = None
 
     inferred = _infer_supplier_from_items(enriched, data_store)
     if inferred:

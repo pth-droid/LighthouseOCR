@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 
 
@@ -32,6 +33,137 @@ def _should_use_vision_after_light_fallback(validation_report):
 
 def _has_reviewable_invoice_data(invoice_json):
     return bool(invoice_json.get("items") or [])
+
+
+def _clean_for_pipeline_check(value):
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9À-ỹ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _supplier_looks_suspicious_after_light_fallback(invoice_json, validation_before_light):
+    missing_before = set((validation_before_light or {}).get("missing_required_fields") or [])
+    if "supplier_name_code" not in missing_before:
+        return False
+
+    supplier = invoice_json.get("supplier_info") or {}
+    supplier_code = str(supplier.get("supplier_name_code") or "").strip()
+    supplier_raw = str(supplier.get("supplier_name_raw") or "").strip()
+    if not supplier_code:
+        return False
+
+    raw_clean = _clean_for_pipeline_check(supplier_raw)
+    company_markers = (
+        "cong ty",
+        "tnhh",
+        "co phan",
+        "chi nhanh",
+        "doanh nghiep",
+        "cua hang",
+        "hop tac xa",
+    )
+    if any(marker in raw_clean for marker in company_markers):
+        return False
+
+    salesperson_markers = ("nvbh", "hrc", "ten nv", "nhan vien", "sales", "giao nhan")
+    return any(marker in raw_clean for marker in salesperson_markers)
+
+
+def _count_numbered_item_rows(normalized_structure):
+    raw_text = str((normalized_structure or {}).get("raw_text") or "")
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    in_table = False
+    row_numbers = set()
+    header_markers = ("stt", "ten hang", "ten quy cach", "ma hang")
+    total_markers = ("tong cong", "cong tien", "tong tien", "thue vat", "tien thue", "vat")
+
+    for idx, line in enumerate(lines):
+        clean = _clean_for_pipeline_check(line)
+        if any(marker in clean for marker in header_markers):
+            in_table = True
+            continue
+        if in_table and any(marker in clean for marker in total_markers):
+            break
+        if not in_table:
+            continue
+
+        match = re.fullmatch(r"0?([1-9]|[1-9][0-9])", clean)
+        if not match:
+            continue
+
+        next_lines = []
+        for next_line in lines[idx + 1: idx + 5]:
+            next_clean_line = _clean_for_pipeline_check(next_line)
+            if any(marker in next_clean_line for marker in total_markers):
+                break
+            next_lines.append(next_line)
+        next_window = " ".join(next_lines)
+        next_clean = _clean_for_pipeline_check(next_window)
+        has_product_text = bool(re.search(r"[a-zÀ-ỹ]{3,}", next_clean))
+        if has_product_text:
+            row_numbers.add(int(match.group(1)))
+
+    return len(row_numbers)
+
+
+def _json_misses_detected_item_rows(invoice_json, normalized_structure):
+    detected_rows = _count_numbered_item_rows(normalized_structure)
+    actual_items = len(invoice_json.get("items") or [])
+    return detected_rows >= 2 and actual_items < detected_rows
+
+
+def _attach_local_evidence_report(invoice_json, rescue_report):
+    if not rescue_report:
+        return invoice_json
+    metadata = invoice_json.setdefault("_local_evidence_rescue", {})
+    metadata["sources_checked"] = rescue_report.get("sources_checked") or []
+    metadata["supplier_candidates"] = rescue_report.get("supplier_candidates") or []
+    if rescue_report.get("errors"):
+        metadata["errors"] = rescue_report.get("errors")
+    return invoice_json
+
+
+def _run_supplier_evidence_rescue(
+    invoice_json,
+    normalized_structure,
+    image,
+    data_store,
+    stop_event,
+    status_callback,
+):
+    from local_evidence_rescue import (
+        apply_rescue_evidence,
+        run_local_evidence_rescue,
+        should_rescue_supplier,
+    )
+    from supplier_enrichment import enrich_supplier
+
+    if not should_rescue_supplier(invoice_json):
+        return invoice_json
+
+    rescue_report = run_local_evidence_rescue(
+        invoice_json,
+        normalized_structure,
+        image,
+        data_store,
+        stop_event=stop_event,
+        status_callback=status_callback,
+    )
+    candidates = rescue_report.get("supplier_candidates") or []
+    if candidates:
+        best = candidates[0]
+        if status_callback:
+            status_callback(
+                "Tim thay bang chung NCC tu local evidence: "
+                f"{best.get('code')} ({float(best.get('confidence') or 0.0):.0%})"
+            )
+        invoice_json = apply_rescue_evidence(invoice_json, rescue_report)
+        invoice_json = enrich_supplier(invoice_json, data_store)
+    else:
+        if status_callback:
+            status_callback("Khong co bang chung NCC du manh tu local evidence.")
+
+    return _attach_local_evidence_report(invoice_json, rescue_report)
 
 
 def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_callback, stage, validation_report):
@@ -126,6 +258,14 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                 confidence_score=normalized.get("avg_confidence", 0.0),
             )
             json_rough = enrich_supplier(json_rough, app_data)
+            json_rough = _run_supplier_evidence_rescue(
+                json_rough,
+                normalized,
+                image,
+                app_data,
+                stop_event,
+                _log,
+            )
             validation = validate_invoice_json(json_rough)
             json_rough["_structure_pipeline"]["validation"] = validation
 
@@ -150,7 +290,16 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     stop_event=stop_event,
                     status_callback=_log,
                 )
+                light_supplier_suspicious = _supplier_looks_suspicious_after_light_fallback(json_rough, validation)
                 json_rough = enrich_supplier(json_rough, app_data)
+                json_rough = _run_supplier_evidence_rescue(
+                    json_rough,
+                    normalized,
+                    image,
+                    app_data,
+                    stop_event,
+                    _log,
+                )
                 light_validation = validate_invoice_json(json_rough)
                 json_rough.setdefault("_structure_pipeline", {})
                 json_rough["_structure_pipeline"]["validation"] = light_validation
@@ -169,6 +318,8 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     )
                     json_rough["_structure_pipeline"]["light_fallback_used"] = True
                     json_rough["_structure_pipeline"]["validation_before_light_fallback"] = validation
+                elif light_supplier_suspicious:
+                    _log("Fallback nhe co NCC dang nghi tu dong NVBH/HRC -> bo qua neu khong co bang chung local.")
             else:
                 _log("Ket qua local du manh -> khong can fallback model nhe.")
 

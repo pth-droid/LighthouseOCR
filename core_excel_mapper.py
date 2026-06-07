@@ -409,6 +409,23 @@ def _row_has_math_error(item: dict) -> bool:
     return abs(expected - total) > 5 # Nới lỏng sai số lên 5đ để tránh báo động giả do làm tròn
 
 
+def _should_route_unmapped_to_chiphi(
+    item_unmapped: bool,
+    supplier_known: bool,
+    mapping_risky: bool,
+    map_score: float,
+    invoice_has_mapped_items: bool,
+) -> bool:
+    if invoice_has_mapped_items:
+        return False
+    return (
+        item_unmapped
+        and supplier_known
+        and not mapping_risky
+        and map_score < 0.40
+    )
+
+
 def _apply_fill_to_row(ws, row_num: int, fill: PatternFill, max_col: int = _TOTAL_COLUMNS):
     for col in range(1, max_col + 1):
         cell = ws.cell(row=row_num, column=col)
@@ -546,7 +563,14 @@ def _score_candidate(
 
     name_score = 0.0
     if raw_norm and cand_norm:
-        name_score = fuzz.token_set_ratio(raw_norm, cand_norm) / 100.0
+        raw_tokens = raw_norm.split()
+        cand_tokens = cand_norm.split()
+        if len(raw_tokens) <= 2 and set(raw_tokens) != set(cand_tokens):
+            name_score = fuzz.ratio(raw_norm, cand_norm) / 100.0
+        else:
+            name_score = fuzz.token_set_ratio(raw_norm, cand_norm) / 100.0
+        if len(raw_tokens) > 2 and _meaningful_token_overlap(raw_norm, cand_norm) >= 3:
+            name_score = max(name_score, fuzz.partial_token_set_ratio(raw_norm, cand_norm) / 100.0)
 
     word_count = len(raw_norm.split()) if raw_norm else 0
 
@@ -719,6 +743,7 @@ def _normalize_for_compare(text: str) -> str:
     result = re.sub(r'(\d+)\s*gram\b', r'\1g', result)
     result = re.sub(r'(\d+)\s*lit\b', r'\1l', result)
     result = re.sub(r'(\d+)\s*kg/tui\b', r'\1kg', result)
+    result = re.sub(r'\bdura\b', 'dua', result)
 
     # Chỉ giữ chữ + số + khoảng trắng + dấu chấm (cho trọng lượng như 3.3kg)
     result = re.sub(r'[^a-z0-9\s\.]', '', result)
@@ -728,6 +753,13 @@ def _normalize_for_compare(text: str) -> str:
 
 
 # _fuzzy_match_items removed (H-3): dead code — pipeline uses _hybrid_map_items directly
+
+
+def _meaningful_token_overlap(left: str, right: str) -> int:
+    stopwords = {"le", "la", "va", "kg", "g", "ml", "hop", "thung", "goi", "cai", "lon"}
+    left_tokens = {tok for tok in left.split() if len(tok) >= 3 and tok not in stopwords and not tok.isdigit()}
+    right_tokens = {tok for tok in right.split() if len(tok) >= 3 and tok not in stopwords and not tok.isdigit()}
+    return len(left_tokens.intersection(right_tokens))
 
 
 def _llm_map_items(
@@ -1490,6 +1522,11 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
             if not ncc_code_raw or ncc_code_raw.lower() in ("mua lẻ", "mua le"):
                 status_callback(f"⚠️ [{_get_voucher()}] NCC trống/mua lẻ — giữ item unmapped trong PNMH")
 
+        invoice_has_mapped_items = any(
+            str(mapped_name or "").strip()
+            for mapped_name in per_invoice_maps.get(invoice_idx, {}).values()
+        )
+
         for item_idx, item in enumerate(items):  # C-2: use index for identity-safe check
             # H-2: math_error evaluated AFTER unit conversion (see below)
             raw_product_name = item.get("product_name", "") or ""
@@ -1663,11 +1700,13 @@ def append_invoices_to_excel(invoice_results: List[Dict[str, Any]], data_store=N
             # --- ROUTING DECISION ---
             # unmapped + NCC đã rõ (not high_risk) → item không có trong danh mục → Chi phí
             # unmapped + NCC trống (high_risk)     → có thể do thiếu context → giữ PNMH + vàng
-            route_to_chiphi = (
-                item_unmapped
-                and supplier_known
-                and not mapping_risky
-                and map_score < 0.40
+            # Current rule: if this invoice already has mapped stock items, keep unmapped rows in PNMH.
+            route_to_chiphi = _should_route_unmapped_to_chiphi(
+                item_unmapped=item_unmapped,
+                supplier_known=supplier_known,
+                mapping_risky=mapping_risky,
+                map_score=map_score,
+                invoice_has_mapped_items=invoice_has_mapped_items,
             )
 
             if route_to_chiphi:

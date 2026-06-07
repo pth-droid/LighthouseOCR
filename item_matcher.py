@@ -73,12 +73,20 @@ def _normalize_for_compare(text: str) -> str:
     result = re.sub(r'(\d+)\s*gram\b', r'\1g', result)
     result = re.sub(r'(\d+)\s*lit\b', r'\1l', result)
     result = re.sub(r'(\d+)\s*kg/tui\b', r'\1kg', result)
+    result = re.sub(r'\bdura\b', 'dua', result)
 
     # Chỉ giữ chữ + số + khoảng trắng + dấu chấm (cho trọng lượng như 3.3kg)
     result = re.sub(r'[^a-z0-9\s\.]', '', result)
     result = re.sub(r'\s+', ' ', result).strip()
 
     return result
+
+
+def _meaningful_token_overlap(left: str, right: str) -> int:
+    stopwords = {"le", "la", "va", "kg", "g", "ml", "hop", "thung", "goi", "cai", "lon"}
+    left_tokens = {tok for tok in left.split() if len(tok) >= 3 and tok not in stopwords and not tok.isdigit()}
+    right_tokens = {tok for tok in right.split() if len(tok) >= 3 and tok not in stopwords and not tok.isdigit()}
+    return len(left_tokens.intersection(right_tokens))
 
 
 def _build_master_index(data_store: Any) -> Tuple[Dict[str, List[dict]], List[str]]:
@@ -123,7 +131,14 @@ def _score_candidate(
 
     name_score = 0.0
     if raw_norm and cand_norm:
-        name_score = fuzz.token_set_ratio(raw_norm, cand_norm) / 100.0
+        raw_tokens = raw_norm.split()
+        cand_tokens = cand_norm.split()
+        if len(raw_tokens) <= 2 and set(raw_tokens) != set(cand_tokens):
+            name_score = fuzz.ratio(raw_norm, cand_norm) / 100.0
+        else:
+            name_score = fuzz.token_set_ratio(raw_norm, cand_norm) / 100.0
+        if len(raw_tokens) > 2 and _meaningful_token_overlap(raw_norm, cand_norm) >= 3:
+            name_score = max(name_score, fuzz.partial_token_set_ratio(raw_norm, cand_norm) / 100.0)
 
     word_count = len(raw_norm.split()) if raw_norm else 0
 
