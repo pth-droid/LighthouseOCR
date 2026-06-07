@@ -30,6 +30,7 @@ a = Analysis(
         ('Data structure', 'Data structure'),
         # Runtime assets
         ('app_style.qss', '.'),
+        ('app_logo.png', '.'),
         ('icon.ico', '.'),
         ('pipeline.yaml', '.'),
         ('excel_mapping_skill.md', '.'),
@@ -39,6 +40,7 @@ a = Analysis(
         ('ocr_vision_handwritten_skill.md', '.'),
         # OCR subprocess script — called by module_paddle_ocr.py via portable Python
         ('ocr_runner.py', '.'),
+        ('ocr_structure_runner.py', '.'),
     ],
     hiddenimports=[
         'PyQt5.sip',

@@ -89,17 +89,35 @@ def validate_data_files() -> list[str]:
 
 import json
 
-# Model Aliases & Defaults (April 2026)
+# Model Aliases & Defaults (June 2026)
 # NOTE: These are in-code fallback defaults only.
 # Active values are always loaded from lighthouse_config.json at runtime.
 # Keep in sync with the defaults written to lighthouse_config.json.
 _DEFAULT_MODELS = {
-    "light_primary":  "gemini-3.1-flash-lite-preview",
+    "light_primary":  "gemini-3.1-flash-lite",
     "light_fallback": "gemini-2.5-flash",
-    "pro_primary":    "gemini-2.5-pro",
-    "pro_fallback":   "gemini-2.5-pro"
+    "pro_primary":    "gemini-3.5-flash",
+    "pro_fallback":   "gemini-3.1-pro-preview"
+}
+_RETIRED_OR_UNSAFE_MODEL_DEFAULTS = {
+    "gemini-2.5-flash-preview-04-17",
+    "gemini-2.5-flash-preview-05-20",
+    "gemini-2.5-flash-preview-09-25",
+    "gemini-2.5-flash-lite-preview-09-2025",
+    "gemini-3.1-flash-lite-preview",
+}
+_MODEL_PRICING_USD_PER_1M = {
+    "gemini-3.1-flash-lite": (0.25, 1.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-3-flash-preview": (0.50, 3.00),
+    "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.1-pro-preview": (2.00, 12.00),
+    "gemini-2.5-pro": (1.25, 10.00),
 }
 _DEFAULT_OCR_MODE = "stable"
+_DEFAULT_OCR_PIPELINE_MODE = "structure_default"
+_VALID_OCR_PIPELINE_MODES = {"structure_default", "legacy_hybrid"}
 
 
 def _normalize_ocr_mode(value: str) -> str:
@@ -113,6 +131,41 @@ def _normalize_ocr_mode(value: str) -> str:
         "cuda": "gpu",
     }
     return aliases.get(str(value or "").strip().lower(), _DEFAULT_OCR_MODE)
+
+
+def _normalize_ocr_pipeline_mode(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in _VALID_OCR_PIPELINE_MODES:
+        return normalized
+    return _DEFAULT_OCR_PIPELINE_MODE
+
+
+def _normalize_models(models: dict | None) -> dict:
+    normalized = _DEFAULT_MODELS.copy()
+    if not isinstance(models, dict):
+        return normalized
+    for slot, default in _DEFAULT_MODELS.items():
+        value = model_id_from_display(models.get(slot))
+        if not value or value in _RETIRED_OR_UNSAFE_MODEL_DEFAULTS:
+            normalized[slot] = default
+        else:
+            normalized[slot] = value
+    return normalized
+
+
+def model_id_from_display(value: str) -> str:
+    return str(value or "").split(" — ", 1)[0].strip()
+
+
+def format_model_option(model_name: str) -> str:
+    model_id = model_id_from_display(model_name)
+    if not model_id:
+        return ""
+    pricing = _MODEL_PRICING_USD_PER_1M.get(model_id)
+    if not pricing:
+        return model_id
+    input_price, output_price = pricing
+    return f"{model_id} — ${input_price:.2f} in / ${output_price:.2f} out per 1M"
 
 class DataManager:
     def __init__(self):
@@ -130,6 +183,7 @@ class DataManager:
         from path_utils import get_root_dir
         self.models = _DEFAULT_MODELS.copy()
         self.ocr_mode = _DEFAULT_OCR_MODE
+        self.ocr_pipeline_mode = _DEFAULT_OCR_PIPELINE_MODE
         self.config_file = os.path.join(get_root_dir(), "env", "lighthouse_config.json")
 
     def load_config(self):
@@ -139,12 +193,13 @@ class DataManager:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
                     if "models" in cfg:
-                        self.models.update(cfg["models"])
+                        self.models.update(_normalize_models(cfg["models"]))
                     self.ocr_mode = _normalize_ocr_mode(cfg.get("ocr_mode"))
+                    self.ocr_pipeline_mode = _normalize_ocr_pipeline_mode(cfg.get("ocr_pipeline_mode"))
             except Exception as e:
                 print(f"Warning: Could not load model config: {e}")
 
-    def save_config(self, api_key=None, admin_pass=None, models=None, ocr_mode=None):
+    def save_config(self, api_key=None, admin_pass=None, models=None, ocr_mode=None, ocr_pipeline_mode=None):
         """Lưu cấu hình (HWID, API Key, Password đã được mã hóa ở main_app_qt) + Models."""
         # Chú ý: Việc mã hóa api_key/pass vẫn thực hiện ở main_app_qt để giữ logic security tập trung.
         # Hàm này chủ yếu để cập nhật phần 'models' trong file json.
@@ -156,11 +211,14 @@ class DataManager:
             except: pass
             
         if models:
-            current_data["models"] = models
-            self.models.update(models)
+            current_data["models"] = _normalize_models(models)
+            self.models.update(current_data["models"])
         if ocr_mode is not None:
             current_data["ocr_mode"] = _normalize_ocr_mode(ocr_mode)
             self.ocr_mode = current_data["ocr_mode"]
+        if ocr_pipeline_mode is not None:
+            current_data["ocr_pipeline_mode"] = _normalize_ocr_pipeline_mode(ocr_pipeline_mode)
+            self.ocr_pipeline_mode = current_data["ocr_pipeline_mode"]
         
         # Các trường khác được pass trực tiếp từ AdminConfigDialog (dạng đã obscure)
         if api_key: current_data["api_key"] = api_key
@@ -218,6 +276,9 @@ class DataManager:
         except Exception as e:
             print(f"Error listing models: {e}")
             return []
+
+    def list_available_model_options(self, api_key: str) -> list[str]:
+        return [format_model_option(name) for name in self.list_available_models(api_key)]
 
     def should_use_minimal_thinking(self, model_name: str, is_primary: bool = True) -> bool:
         """

@@ -130,7 +130,7 @@ if errorlevel 1 (
 )
 
 echo [INFO] Dang lam sach cac goi PaddleOCR/PaddlePaddle cu...
-"%PYTHON_EXE%" -m pip uninstall -y paddleocr paddlepaddle paddlex >nul 2>&1
+"%PYTHON_EXE%" -m pip uninstall -y paddleocr paddlepaddle paddlepaddle-gpu paddlex >nul 2>&1
 
 if /I "%OCR_STACK%"=="legacy" (
     echo [INFO] Cai stack LEGACY: PaddleOCR 2.7.3 + PP-OCRv4 compatibility.
@@ -140,20 +140,30 @@ if /I "%OCR_STACK%"=="legacy" (
         goto abort
     )
 ) else (
-    echo [INFO] Cai stack PP-OCRv5: PaddlePaddle 3.3.1 + PaddleOCR 3.6.0.
+    echo [INFO] Cai stack PP-OCRv5: PaddlePaddle 3.2.0 + PaddleOCR 3.6.0.
     "%PYTHON_EXE%" -m pip install "numpy<2.0.0" "opencv-python"
     if errorlevel 1 (
         echo [ERROR] Cai dat numpy/opencv that bai.
         goto abort
     )
-    "%PYTHON_EXE%" -m pip install "paddlepaddle==3.3.1" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+    "%PYTHON_EXE%" -m pip install "paddlepaddle==3.2.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
     if errorlevel 1 (
-        echo [ERROR] Cai dat PaddlePaddle 3.3.1 that bai.
+        echo [ERROR] Cai dat PaddlePaddle 3.2.0 that bai.
         goto abort
     )
-    "%PYTHON_EXE%" -m pip install "paddleocr==3.6.0"
+    "%PYTHON_EXE%" -m pip install "numpy<2.0.0"
+    if errorlevel 1 (
+        echo [ERROR] Cai dat numpy<2.0.0 that bai.
+        goto abort
+    )
+    "%PYTHON_EXE%" -m pip install "paddleocr[doc-parser]==3.6.0"
     if errorlevel 1 (
         echo [ERROR] Cai dat PaddleOCR 3.6.0 that bai.
+        goto abort
+    )
+    "%PYTHON_EXE%" -m pip install "paddlex[ocr]==3.6.1"
+    if errorlevel 1 (
+        echo [ERROR] Cai dat PaddleX OCR extras that bai.
         goto abort
     )
 )
@@ -173,15 +183,30 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] TAI TRUOC MO HINH AI (WARMUP)...
-if exist "%BASE_DIR%ocr_runner.py" (
-    "%PYTHON_EXE%" "%BASE_DIR%ocr_runner.py" --warmup
-    if errorlevel 1 (
-        echo [ERROR] Warmup PaddleOCR that bai.
+echo [3/3] KIEM TRA PIPELINE OCR...
+if /I "%OCR_STACK%"=="legacy" (
+    if exist "%BASE_DIR%ocr_runner.py" (
+        "%PYTHON_EXE%" "%BASE_DIR%ocr_runner.py" --warmup
+        if errorlevel 1 (
+            echo [ERROR] Warmup PaddleOCR legacy that bai.
+            goto abort
+        )
+    ) else (
+        echo [ERROR] Khong tim thay ocr_runner.py de warmup legacy model.
         goto abort
     )
 ) else (
-    echo [WARNING] Khong tim thay ocr_runner.py de warmup model.
+    if exist "%BASE_DIR%ocr_structure_runner.py" (
+        "%PYTHON_EXE%" "%BASE_DIR%ocr_structure_runner.py" --check
+        if errorlevel 1 (
+            echo [ERROR] Kiem tra PP-StructureV3 that bai.
+            echo [INFO] Hay xem loi o tren. Thuong gap nhat: thieu paddlex[ocr] hoac sai PaddlePaddle runtime.
+            goto abort
+        )
+    ) else (
+        echo [ERROR] Khong tim thay ocr_structure_runner.py de kiem tra PP-StructureV3.
+        goto abort
+    )
 )
 
 echo.

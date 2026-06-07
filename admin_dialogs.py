@@ -162,7 +162,7 @@ class AdminConfigDialog(QDialog):
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        from data_manager import app_data
+        from data_manager import app_data, format_model_option
         app_data.load_config()  # Đảm bảo load config mới nhất
         m = app_data.models
 
@@ -170,33 +170,33 @@ class AdminConfigDialog(QDialog):
         grid.addWidget(QLabel("Model Nhẹ (Primary):"), 0, 0)
         self.cb_light_p = QComboBox()
         self.cb_light_p.setEditable(True)
-        self.cb_light_p.addItem(m.get("light_primary"))
+        self.cb_light_p.addItem(format_model_option(m.get("light_primary")))
         grid.addWidget(self.cb_light_p, 0, 1)
 
         # Light Fallback
         grid.addWidget(QLabel("Model Nhẹ (Fallback):"), 1, 0)
         self.cb_light_f = QComboBox()
         self.cb_light_f.setEditable(True)
-        self.cb_light_f.addItem(m.get("light_fallback"))
+        self.cb_light_f.addItem(format_model_option(m.get("light_fallback")))
         grid.addWidget(self.cb_light_f, 1, 1)
 
         # Pro Primary
         grid.addWidget(QLabel("Model Mạnh (Primary):"), 2, 0)
         self.cb_pro_p = QComboBox()
         self.cb_pro_p.setEditable(True)
-        self.cb_pro_p.addItem(m.get("pro_primary"))
+        self.cb_pro_p.addItem(format_model_option(m.get("pro_primary")))
         grid.addWidget(self.cb_pro_p, 2, 1)
 
         # Pro Fallback
         grid.addWidget(QLabel("Model Mạnh (Fallback):"), 3, 0)
         self.cb_pro_f = QComboBox()
         self.cb_pro_f.setEditable(True)
-        self.cb_pro_f.addItem(m.get("pro_fallback"))
+        self.cb_pro_f.addItem(format_model_option(m.get("pro_fallback")))
         grid.addWidget(self.cb_pro_f, 3, 1)
 
         layout.addLayout(grid)
 
-        msg_hint = QLabel("💡 Chiến lược: [Nhẹ] Dùng Flash-Lite 3.1 → 2.5 Flash | [Mạnh] Dùng Flash 3.1 → 2.5 Pro.\nMinimal Thinking tự động bật cho các model đời mới (2.0+).")
+        msg_hint = QLabel("💡 Chiến lược: [Nhẹ] Dùng Gemini 3.1 Flash-Lite → 2.5 Flash | [Mạnh] Dùng Gemini 3.5 Flash → 3.1 Pro Preview.\nMinimal Thinking tự động bật cho các model đời mới khi phù hợp.")
         msg_hint.setWordWrap(True)
         msg_hint.setStyleSheet("color: #49769F; font-size: 12px; font-style: italic; line-height: 1.4;")
         layout.addWidget(msg_hint)
@@ -222,6 +222,15 @@ class AdminConfigDialog(QDialog):
         current_index = self.cb_ocr_mode.findData(current_ocr_mode)
         self.cb_ocr_mode.setCurrentIndex(current_index if current_index >= 0 else 0)
         grid_ocr.addWidget(self.cb_ocr_mode, 0, 1)
+
+        grid_ocr.addWidget(QLabel("Pipeline OCR:"), 1, 0)
+        self.cb_ocr_pipeline_mode = QComboBox()
+        self.cb_ocr_pipeline_mode.addItem("Mới: PP-StructureV3 mặc định", "structure_default")
+        self.cb_ocr_pipeline_mode.addItem("Cũ: Paddle + Gemini", "legacy_hybrid")
+        current_pipeline_mode = getattr(app_data, "ocr_pipeline_mode", "structure_default")
+        current_pipeline_index = self.cb_ocr_pipeline_mode.findData(current_pipeline_mode)
+        self.cb_ocr_pipeline_mode.setCurrentIndex(current_pipeline_index if current_pipeline_index >= 0 else 0)
+        grid_ocr.addWidget(self.cb_ocr_pipeline_mode, 1, 1)
         layout.addLayout(grid_ocr)
 
         msg_ocr_hint = QLabel(
@@ -283,8 +292,8 @@ class AdminConfigDialog(QDialog):
         self.btn_list_models.setEnabled(False)
         QApplication.processEvents()
 
-        from data_manager import app_data
-        model_names = app_data.list_available_models(api_key)
+        from data_manager import app_data, format_model_option
+        model_names = app_data.list_available_model_options(api_key)
 
         if not model_names:
             QMessageBox.warning(self, "Lỗi", "Không lấy được danh sách model. Kiểm tra API Key.")
@@ -293,7 +302,7 @@ class AdminConfigDialog(QDialog):
                 current = cb.currentText()
                 cb.clear()
                 cb.addItems(model_names)
-                cb.setCurrentText(current)
+                cb.setCurrentText(format_model_option(current))
             QMessageBox.information(self, "Thành công", f"Đã tìm thấy {len(model_names)} models Gemini.")
 
         self.btn_list_models.setText("🔍  Dynamic Model Discovery (Lấy danh sách mới nhất)")
@@ -311,16 +320,19 @@ class AdminConfigDialog(QDialog):
         final_pass = new_pass if new_pass else old_pass
         hwid       = get_hardware_id()
 
+        from data_manager import model_id_from_display
+
         config_data = {
             "hardware_id":    hwid,
             "api_key":        api_key,
             "admin_password": final_pass,
             "ocr_mode":       self.cb_ocr_mode.currentData() or "stable",
+            "ocr_pipeline_mode": self.cb_ocr_pipeline_mode.currentData() or "structure_default",
             "models": {
-                "light_primary":  self.cb_light_p.currentText().strip(),
-                "light_fallback": self.cb_light_f.currentText().strip(),
-                "pro_primary":    self.cb_pro_p.currentText().strip(),
-                "pro_fallback":   self.cb_pro_f.currentText().strip(),
+                "light_primary":  model_id_from_display(self.cb_light_p.currentText()),
+                "light_fallback": model_id_from_display(self.cb_light_f.currentText()),
+                "pro_primary":    model_id_from_display(self.cb_pro_p.currentText()),
+                "pro_fallback":   model_id_from_display(self.cb_pro_f.currentText()),
             }
         }
 
@@ -329,6 +341,7 @@ class AdminConfigDialog(QDialog):
             "api_key":        obscure_data(api_key, hwid),
             "admin_password": obscure_data(final_pass, STATIC_SALT),
             "ocr_mode":       config_data["ocr_mode"],
+            "ocr_pipeline_mode": config_data["ocr_pipeline_mode"],
             "models":         config_data["models"]
         }
 
@@ -341,6 +354,7 @@ class AdminConfigDialog(QDialog):
             from data_manager import app_data
             app_data.models.update(config_data["models"])
             app_data.ocr_mode = config_data["ocr_mode"]
+            app_data.ocr_pipeline_mode = config_data["ocr_pipeline_mode"]
 
             QMessageBox.information(self, "Thành công",
                 "Đã lưu API Key, Mật khẩu, AI Models và chế độ Local OCR!")

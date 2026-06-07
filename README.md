@@ -1,9 +1,13 @@
-- `main_app_qt.py`: Source of truth for software version (`APP_VERSION`).
+- `main_app_qt.py`: Source of truth for software version (`APP_VERSION`, currently `v7.4`).
 - `claude.md`: Source of truth for project documentation and Alias Dictionary management details.
 
 # LighthouseOCR
 
 Ứng dụng OCR hóa đơn tự động cho nghiệp vụ nhập kho (PNMH) và nhập chi phí, sử dụng PaddleOCR + Google Gemini.
+
+Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction, business KIE, local-first supplier enrichment, Python financial calculation, and Gemini Flash as the first text fallback when local validation or item mapping is weak. If local OCR is extremely weak or the light fallback still returns no line items/total amount, the pipeline escalates to the Pro Vision model so handwritten/creased invoices do not enter review as empty JSON. If all fallback layers still produce no line items, the app keeps the invoice out of blank post-process review. Legacy Paddle + Gemini mode remains selectable in system settings.
+
+Dynamic Gemini model discovery shows known input/output token prices beside model names in the configuration UI. The app still saves only the clean model id, so labels with prices are safe for API calls.
 
 ---
 
@@ -39,7 +43,7 @@ Giải nén toàn bộ thư mục `LighthouseOCR` ra ổ cứng. Ví dụ: `D:\L
 3. Script sẽ tự động:
    - Cài Microsoft Visual C++ Redistributable (nếu thiếu)
    - Tải Python 3.10 portable (`python_env/`)
-   - Cài PaddleOCR 3.6.0 + PaddlePaddle 3.3.1
+   - Cài PaddleOCR 3.6.0 + PaddlePaddle 3.2.0
    - Tải trước mô hình AI (~200 MB)
 4. Khi hiện `HE THONG DA SAN SANG!` → nhấn phím bất kỳ để đóng
 
@@ -96,10 +100,12 @@ pip install "numpy<2.0.0" opencv-python Pillow PyQt5 openpyxl rapidfuzz
 pip install google-genai
 
 # PaddlePaddle (từ index riêng của Paddle)
-pip install "paddlepaddle==3.3.1" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+pip install "paddlepaddle==3.2.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+pip install "numpy<2.0.0"
 
 # PaddleOCR
-pip install "paddleocr==3.6.0"
+pip install "paddleocr[doc-parser]==3.6.0"
+pip install "paddlex[ocr]==3.6.1"
 
 # Tesseract wrapper (tùy chọn)
 pip install pytesseract
@@ -148,9 +154,18 @@ LighthouseOCR/
 ├── core_excel_mapper.py    # Ghi kết quả ra Excel
 ├── data_manager.py         # Quản lý dữ liệu master + alias
 ├── module_paddle_ocr.py    # Wrapper gọi PaddleOCR qua subprocess
+├── ocr_pipeline_structure.py # Default PP-StructureV3 pipeline
+├── ocr_structure_runner.py  # Isolated PP-StructureV3 subprocess
+├── module_paddle_structure_ocr.py # PP-StructureV3 app wrapper
+├── business_kie.py          # Business KIE from master data
+├── supplier_enrichment.py   # Local-first NCC resolver with confidence/evidence
+├── invoice_json_builder.py  # Downstream-compatible invoice JSON builder
+├── invoice_validation.py    # Local result validation gate
+├── fallback_light_structurer.py # Gemini light fallback for weak local result
 ├── module_flash_ocr.py     # OCR nhanh qua Gemini Flash
 ├── module_pro_ocr.py       # OCR chuyên sâu qua Gemini Pro
 ├── app_style.qss           # Stylesheet UI
+├── app_logo.png            # Main UI logo bundled into dist
 ├── icon.ico                # Icon ứng dụng
 ├── pipeline.yaml           # Cấu hình luồng xử lý OCR
 ├── LighthouseOCR.spec      # PyInstaller build spec
@@ -185,15 +200,20 @@ LighthouseOCR/
    - Deskew (chỉnh nghiêng ±15°)
    - Denoising, CLAHE, Sharpening
 
-2. **PaddleOCR** (PP-OCRv5, chạy qua subprocess):
-   - Nhận diện chữ tiếng Việt
-   - Kết quả ghi ra JSON tạm
+2. **PP-StructureV3 + PP-OCRv5**:
+   - Runs layout, text, and table extraction through an isolated subprocess.
+   - Normalizes output into text, tokens, regions, and tables.
+   - Does not keep large debug image payloads in runtime JSON.
 
-3. **Gemini AI**:
-   - Flash OCR: phân tích nhanh toàn bộ hóa đơn
-   - Pro OCR: phân tích chuyên sâu cho hóa đơn phức tạp
-   - Tính toán hệ số quy đổi đơn vị, khớp tên vật tư
+3. **KIE + Enrichment + Calculator**:
+   - `business_kie.py`: extracts supplier, date, department, items, and totals from PP-Structure output plus master data.
+   - `supplier_enrichment.py`: if NCC is missing, infers it only when multiple item evidences point clearly to one supplier; writes `_supplier_resolution`.
+   - `module_calculator.py`: handles VAT, discount, shipping, x1000 shorthand, and accounting unit price. It does not call LLM to infer NCC.
 
+4. **Gemini AI fallback**:
+   - Flash fallback runs only when local validation is weak.
+   - Flash item mapping runs only when local alias/fuzzy matching cannot resolve item names.
+   - Legacy Flash/Pro OCR remains available through `legacy_hybrid` mode.
 ### Dialog xem xét (post_process_dialog.py)
 
 - Bảng PNMH (Phiếu Nhập Mua Hàng) với đầy đủ cột Excel

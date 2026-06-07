@@ -16,6 +16,7 @@ $ProjectDir      = $PSScriptRoot
 $DistDir         = Join-Path $ProjectDir "dist"
 $BuildOutputDir  = Join-Path $DistDir "LighthouseOCR"   # final output in project
 $SpecFile        = Join-Path $ProjectDir "LighthouseOCR.spec"
+$StructureRunner = Join-Path $ProjectDir "ocr_structure_runner.py"
 $PrimaryEnvDir   = Join-Path $ProjectDir "env"
 $LegacyEnvDir    = Join-Path $ProjectDir "python_env"
 $DataDir         = Join-Path $ProjectDir "Data structure"
@@ -54,8 +55,18 @@ if (-not (Test-Path $EnvPython)) {
     $EnvPython = Join-Path $PrimaryEnvDir "Scripts\python.exe"
 }
 if (Test-Path $EnvPython) {
+    if (Test-Path $StructureRunner) {
+        Write-Host "  Preflight: PP-StructureV3 runtime check..."
+        & $EnvPython $StructureRunner --check
+        if ($LASTEXITCODE -ne 0) {
+            throw "PP-StructureV3 runtime check failed. Run Setup_Moi_Truong.bat or Setup_Nguon.bat before building."
+        }
+    } else {
+        throw "Khong tim thay ocr_structure_runner.py de kiem tra PP-StructureV3."
+    }
     & $EnvPython -m PyInstaller $SpecFile --clean -y --workpath $TempBuildDir --distpath $TempDistDir
 } else {
+    Write-Host "  WARNING: Khong tim thay env python de kiem tra PP-StructureV3 truoc build."
     pyinstaller $SpecFile --clean -y --workpath $TempBuildDir --distpath $TempDistDir
 }
 if ($LASTEXITCODE -ne 0) {
@@ -163,11 +174,11 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 # --- Step 4: Config Template ---
 Write-Host "[4/$TotalSteps] Config Template..."
 $DestConfig = Join-Path $DestEnv "lighthouse_config.json"
-$EmptyConfig = @{ hardware_id = ""; api_key = ""; admin_password = ""; ocr_mode = "stable"; models = @{
-    light_primary  = "gemini-2.5-flash-preview-04-17"
+$EmptyConfig = @{ hardware_id = ""; api_key = ""; admin_password = ""; ocr_mode = "stable"; ocr_pipeline_mode = "structure_default"; models = @{
+    light_primary  = "gemini-3.1-flash-lite"
     light_fallback = "gemini-2.5-flash"
-    pro_primary    = "gemini-2.5-pro"
-    pro_fallback   = "gemini-2.5-pro"
+    pro_primary    = "gemini-3.5-flash"
+    pro_fallback   = "gemini-3.1-pro-preview"
 }} | ConvertTo-Json -Depth 3
 if (Test-Path $DestEnv) {
     [System.IO.File]::WriteAllText($DestConfig, $EmptyConfig, $Utf8NoBom)

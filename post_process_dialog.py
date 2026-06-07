@@ -302,6 +302,25 @@ def _find_first_empty_row(ws, start_row: int = 3) -> int:
         row += 1
 
 
+def _resolve_invoice_image_path(pnmh_path: str, image_name: str) -> str:
+    image_name = str(image_name or "").strip()
+    if not image_name:
+        return ""
+    if os.path.isabs(image_name):
+        return image_name
+
+    pnmh_dir = os.path.dirname(os.path.abspath(pnmh_path or ""))
+    candidates = [
+        os.path.join(pnmh_dir, image_name),
+        os.path.join(os.path.dirname(pnmh_dir), "DONE", image_name),
+        os.path.join(get_root_dir(), "DONE", image_name),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[0]
+
+
 # ════════════════════════════════════════════════════════════════════════════
 class PostProcessDialog(QDialog):
     def __init__(self, pnmh_path: str, chiphi_path: str | None,
@@ -347,6 +366,7 @@ class PostProcessDialog(QDialog):
         self._load_pnmh()
         self._load_chiphi()
         self._load_settings()  # Restore geometry/splitter after UI is built
+        QTimer.singleShot(0, self._select_initial_preview_rows)
 
     def keyPressEvent(self, event):
         # Bỏ tính năng ấn Esc đóng bảng review
@@ -648,7 +668,7 @@ class PostProcessDialog(QDialog):
             self._clear_image('pnmh', "Không có ảnh\ncho dòng này")
             return
         self._img_state['pnmh']['zoom'] = 1.0
-        img_path = os.path.join(os.path.dirname(self.pnmh_path), self._pnmh_image_filenames[row])
+        img_path = _resolve_invoice_image_path(self.pnmh_path, self._pnmh_image_filenames[row])
         self._display_invoice_image('pnmh', img_path)
 
     def _on_chiphi_selection_changed(self):
@@ -661,8 +681,23 @@ class PostProcessDialog(QDialog):
             self._clear_image('chiphi', "Không có ảnh\ncho dòng này")
             return
         self._img_state['chiphi']['zoom'] = 1.0
-        img_path = os.path.join(os.path.dirname(self.pnmh_path), self._chiphi_image_filenames[row])
+        img_path = _resolve_invoice_image_path(self.pnmh_path, self._chiphi_image_filenames[row])
         self._display_invoice_image('chiphi', img_path)
+
+    def _select_initial_preview_rows(self):
+        self._select_first_row_with_image(self.pnmh_table, self._pnmh_image_filenames)
+        self._select_first_row_with_image(self.chiphi_table, self._chiphi_image_filenames)
+
+    def _select_first_row_with_image(self, table: QTableWidget, filenames: list[str]):
+        if table.selectedIndexes() or table.rowCount() <= 0:
+            return
+        target_row = 0
+        for idx, filename in enumerate(filenames):
+            if str(filename or "").strip():
+                target_row = idx
+                break
+        if target_row < table.rowCount():
+            table.setCurrentCell(target_row, 0)
 
     def _clear_image(self, panel_id: str, message: str):
         scroll, label = self._get_img_widgets(panel_id)
@@ -1330,7 +1365,7 @@ class PostProcessDialog(QDialog):
 
             copied_images: list[str] = []
             if image_name:
-                src_path = os.path.join(os.path.dirname(self.pnmh_path), image_name)
+                src_path = _resolve_invoice_image_path(self.pnmh_path, image_name)
                 if os.path.exists(src_path):
                     ext      = os.path.splitext(image_name)[1].lower()
                     img_name = f"{base_name}{ext}"

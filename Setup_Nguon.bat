@@ -124,19 +124,32 @@ if errorlevel 1 (
 )
 
 echo [INFO] Lam sach goi PaddleOCR/PaddlePaddle cu (neu co)...
-"%PYTHON_EXE%" -m pip uninstall -y paddleocr paddlepaddle paddlex >nul 2>&1
+"%PYTHON_EXE%" -m pip uninstall -y paddleocr paddlepaddle paddlepaddle-gpu paddlex >nul 2>&1
 
-echo [INFO] Cai PaddlePaddle 3.3.1 (CPU)...
-"%PYTHON_EXE%" -m pip install "paddlepaddle==3.3.1" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+echo [INFO] Cai PaddlePaddle 3.2.0 (CPU)...
+"%PYTHON_EXE%" -m pip install "paddlepaddle==3.2.0" -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 if errorlevel 1 (
     echo [ERROR] Cai PaddlePaddle that bai.
     goto abort
 )
 
+"%PYTHON_EXE%" -m pip install "numpy<2.0.0"
+if errorlevel 1 (
+    echo [ERROR] Cai numpy<2.0.0 that bai.
+    goto abort
+)
+
 echo [INFO] Cai PaddleOCR 3.6.0...
-"%PYTHON_EXE%" -m pip install "paddleocr==3.6.0"
+"%PYTHON_EXE%" -m pip install "paddleocr[doc-parser]==3.6.0"
 if errorlevel 1 (
     echo [ERROR] Cai PaddleOCR that bai.
+    goto abort
+)
+
+echo [INFO] Cai PaddleX OCR extras cho PP-StructureV3...
+"%PYTHON_EXE%" -m pip install "paddlex[ocr]==3.6.1"
+if errorlevel 1 (
+    echo [ERROR] Cai PaddleX OCR extras that bai.
     goto abort
 )
 
@@ -144,16 +157,19 @@ if errorlevel 1 (
 :: [4/4] Warmup mo hinh AI + Tao file launcher
 :: ======================================================
 echo.
-echo [4/4] Tai truoc mo hinh AI (khoang 200MB)...
-if exist "%BASE_DIR%ocr_runner.py" (
-    "%PYTHON_EXE%" "%BASE_DIR%ocr_runner.py" --warmup
+echo [4/4] Kiem tra PP-StructureV3 pipeline (co the tai model lan dau)...
+if exist "%BASE_DIR%ocr_structure_runner.py" (
+    "%PYTHON_EXE%" "%BASE_DIR%ocr_structure_runner.py" --check
     if errorlevel 1 (
-        echo [WARNING] Warmup PaddleOCR that bai. Co the chay lai sau.
+        echo [ERROR] Kiem tra PP-StructureV3 that bai.
+        echo [INFO] Hay xem loi o tren. Thuong gap nhat: thieu paddlex[ocr] hoac sai PaddlePaddle runtime.
+        goto abort
     ) else (
-        echo [OK] Mo hinh AI da san sang.
+        echo [OK] PP-StructureV3 pipeline da san sang.
     )
 ) else (
-    echo [WARNING] Khong tim thay ocr_runner.py.
+    echo [ERROR] Khong tim thay ocr_structure_runner.py.
+    goto abort
 )
 
 :: Tao file khoi dong LighthouseInvoicesOCR.bat
