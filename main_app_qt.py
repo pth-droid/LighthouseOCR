@@ -56,7 +56,7 @@ ADMIN_PASSWORD = "admin"
 CONFIG_FILE    = get_asset_path(os.path.join("env", "lighthouse_config.json"))
 GEMINI_API_KEY = ""
 STATIC_SALT    = "lh_app_secure_v1"  # Cố định cho password để không bị sai khi đổi máy
-APP_VERSION    = "v7.4"
+APP_VERSION    = "v7.5"
 
 # ──────────────────────────────────────────────
 #  Color Palette (Ocean Blue)
@@ -373,12 +373,13 @@ class WorkerSignals(QObject):
 
 class OCRWorker(QThread):
     def __init__(self, input_dir: str, stop_event: threading.Event,
-                 api_key: str, signals: WorkerSignals):
+                 api_key: str, signals: WorkerSignals, dept_map: dict = None):
         super().__init__()
         self.input_dir  = input_dir
         self.stop_event = stop_event
         self.api_key    = api_key
         self.s          = signals
+        self.dept_map   = dept_map
 
     # Thin wrappers so callbacks work identically to CTk version
     def _log(self, msg):
@@ -405,6 +406,7 @@ class OCRWorker(QThread):
                 self.stop_event,
                 self.api_key,
                 self.s,
+                dept_map=self.dept_map,
             )
             return
 
@@ -414,6 +416,7 @@ class OCRWorker(QThread):
             self.stop_event,
             self.api_key,
             self.s,
+            dept_map=self.dept_map,
         )
         return
 
@@ -1090,6 +1093,24 @@ class LighthouseOCRApp(QMainWindow):
         except Exception as e:
             self._show_error("Lỗi", f"Không thể mở Hard Cases:\n{e}")
 
+    def _open_done_detail_browser_with_auth(self):
+        from admin_dialogs import AdminLoginDialog as _LoginDlg
+        login = _LoginDlg(self, self.app_config, is_boot_check=False)
+        if login.exec_() != QDialog.Accepted:
+            return
+        try:
+            from done_detail_browser import DoneDetailBrowserDialog
+            from output_paths import latest_run_folder
+            from data_manager import app_data
+            DoneDetailBrowserDialog(
+                latest_run_folder(),
+                app_data=app_data,
+                api_key=GEMINI_API_KEY,
+                parent=self,
+            ).exec_()
+        except Exception as e:
+            self._show_error("Lỗi", f"Không thể mở trình duyệt kết quả:\n{e}")
+
     def _open_admin_config(self, is_boot=False):
         dlg = AdminConfigDialog(self, self.app_config)
         dlg.config_saved.connect(self._on_config_saved)
@@ -1307,12 +1328,15 @@ class LighthouseOCRApp(QMainWindow):
             )
             act_cfg = menu.addAction("⚙️  Cấu hình hệ thống")
             menu.addSeparator()
+            act_detail = menu.addAction("📋  Duyệt & sửa kết quả (chi tiết)")
             act_hc  = menu.addAction("🗂  Xem Hard Cases")
             chosen = menu.exec_(btn_settings.mapToGlobal(
                 btn_settings.rect().topLeft()
             ))
             if chosen == act_cfg:
                 self._do_admin_login(is_boot=False)
+            elif chosen == act_detail:
+                self._open_done_detail_browser_with_auth()
             elif chosen == act_hc:
                 self._open_hard_case_browser_with_auth()
 
@@ -1432,23 +1456,28 @@ class LighthouseOCRApp(QMainWindow):
             self.entry_folder.setText(folder)
 
     def _open_output_folder(self):
-        base_dir = self.entry_folder.text().strip()
-        if not base_dir or not os.path.exists(base_dir):
-            QMessageBox.warning(self, "Lỗi", "Thư mục đầu vào không hợp lệ.")
+        # "Open Result" now opens the JSON result browser on the newest run.
+        from output_paths import latest_run_folder
+        run_dir = latest_run_folder()
+        if not run_dir:
+            QMessageBox.information(
+                self, "Chưa có kết quả",
+                "Chưa có lần xử lý nào trong thư mục OUTPUT.\n"
+                "Hãy chạy Scan để tạo kết quả trước."
+            )
             return
-            
-        # Thư mục DONE nằm ngang hàng (sibling) với thư mục ảnh đầu vào
-        root_dir = base_dir.rstrip(os.sep).rstrip('/')
-        done_dir = os.path.join(os.path.dirname(root_dir), "DONE")
-        
-        if not os.path.exists(done_dir):
-            try: os.makedirs(done_dir, exist_ok=True)
-            except: pass
-            
         try:
-            os.startfile(done_dir)
+            from done_results_browser import DoneResultsBrowserDialog
+            from data_manager import app_data
+            dlg = DoneResultsBrowserDialog(
+                initial_run_dir=run_dir,
+                app_data=app_data,
+                api_key=GEMINI_API_KEY,
+                parent=self,
+            )
+            dlg.exec_()
         except Exception as e:
-            QMessageBox.critical(self, "Lỗi", f"Không thể mở thư mục: {e}")
+            QMessageBox.critical(self, "Lỗi", f"Không mở được trình duyệt kết quả:\n{e}")
 
     # ── Log helpers ───────────────────────────
     def _append_log(self, msg: str):
@@ -1500,6 +1529,24 @@ class LighthouseOCRApp(QMainWindow):
                 "Thư mục đầu vào không hợp lệ. Vui lòng chọn lại!")
             return
 
+        # ── Pre-scan: tag each invoice image to a department (mandatory) ──
+        valid_ext = ('.png', '.jpg', '.jpeg')
+        image_files = sorted(
+            f for f in os.listdir(input_dir) if f.lower().endswith(valid_ext)
+        )
+        if not image_files:
+            QMessageBox.warning(self, "Không có ảnh",
+                "Thư mục đầu vào không có ảnh (.png/.jpg/.jpeg).")
+            return
+
+        from department_tagging_dialog import DepartmentTaggingDialog
+        image_paths = [os.path.join(input_dir, f) for f in image_files]
+        tag_dlg = DepartmentTaggingDialog(image_paths, parent=self)
+        if tag_dlg.exec_() != QDialog.Accepted:
+            self._append_log("🛑 Đã hủy phiên scan — chưa gán bộ phận.")
+            return
+        dept_map = tag_dlg.get_department_map()
+
         self.is_running = True
         self._stop_event.clear()
         self.btn_start.setEnabled(False)
@@ -1526,7 +1573,8 @@ class LighthouseOCRApp(QMainWindow):
             input_dir=input_dir,
             stop_event=self._stop_event,
             api_key=GEMINI_API_KEY,
-            signals=signals
+            signals=signals,
+            dept_map=dept_map,
         )
         self._worker.start()
 

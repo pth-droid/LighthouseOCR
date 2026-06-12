@@ -9,7 +9,7 @@ import shutil
 import time
 
 
-def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
+def run_pipeline(input_dir: str, stop_event, api_key: str, signals, dept_map=None) -> str:
     """
     Run the full OCR → Excel pipeline.
 
@@ -17,6 +17,9 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
         input_dir:  Path to the folder containing input images.
         stop_event: threading.Event used to signal cancellation.
         api_key:    Gemini API key.
+        dept_map:   Optional {filename: department} from the pre-scan tagging
+                    dialog. Accepted for signature parity with the structure
+                    pipeline; legacy mode does not apply it.
         signals:    WorkerSignals instance (log, log_ow, progress, status_txt, finished, error).
 
     Returns:
@@ -28,7 +31,6 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
     output_path = ""
 
     root_dir = input_dir.rstrip(os.sep).rstrip('/')
-    done_dir = os.path.join(os.path.dirname(root_dir), "DONE")
 
     valid_ext = ('.png', '.jpg', '.jpeg')
     files = [f for f in os.listdir(root_dir) if f.lower().endswith(valid_ext)]
@@ -38,8 +40,12 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
         signals.status_txt.emit("Không có ảnh!", "error")
         return output_path
 
+    # Each run gets its own timestamped folder under OUTPUT/ (JSON + images + Excel).
+    from output_paths import create_run_output_dir
+    done_dir = create_run_output_dir()
     os.makedirs(done_dir, exist_ok=True)
     _log(f"📁 Thư mục đầu vào: {root_dir}")
+    _log(f"📂 Thư mục kết quả: {done_dir}")
     _log(f"📦 Đã phát hiện {len(files)} hình ảnh chờ xử lý.")
 
     total = len(files)
@@ -85,8 +91,14 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                 status_callback=_log
             )
 
+            # Trace which actual legacy path this invoice takes.
+            legacy_primary = None
+            legacy_pro_vision = False
+            legacy_reason = None
+
             if avg_conf > 0.90:
                 _log("🔀 Phân luồng In (1A): Độ tin cậy cao → Flash Structurer")
+                legacy_primary = "flash_structurer"
                 flash_engine = get_flash_structurer(api_key, app_data)
                 json_rough = flash_engine.structure_text_to_json(
                     raw_text, avg_conf,
@@ -113,15 +125,21 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                         f"(lines={raw_line_count}, conf={avg_conf:.1%}, type={invoice_type or 'UNKNOWN'}, items={item_count}) "
                         "→ fallback Pro Vision"
                     )
+                    legacy_pro_vision = True
+                    legacy_reason = "hard_case"
                     pro_engine = get_pro_ocr(api_key, app_data)
                     json_rough = pro_engine.extract_image_directly(
                         image, stop_event=stop_event, status_callback=_log
                     )
             else:
+                legacy_primary = "pro_vision_direct"
+                legacy_pro_vision = True
                 if raw_text == "":
                     _log("🔀 Phân luồng Ảnh (1B): Không đọc được chữ → AI Pro Vision")
+                    legacy_reason = "no_text"
                 else:
                     _log(f"🔀 Phân luồng Viết tay (1B): Tin cậy {avg_conf:.1%} → AI Pro")
+                    legacy_reason = "handwritten"
                 pro_engine = get_pro_ocr(api_key, app_data)
                 json_rough = pro_engine.extract_image_directly(
                     image, stop_event=stop_event, status_callback=_log
@@ -132,6 +150,15 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                 json_rough, stop_event=stop_event, status_callback=_log
             )
 
+            invoice_json["_source_filename"] = filename
+            # Record which actual legacy path produced this result, then stamp route.
+            invoice_json.setdefault("_structure_pipeline", {}).update({
+                "engine_primary": legacy_primary,
+                "pro_vision_fallback_used": legacy_pro_vision,
+                "legacy_reason": legacy_reason,
+            })
+            from pipeline_trace import build_route
+            invoice_json["_processing_route"] = build_route(invoice_json, "legacy_hybrid")
             with open(dest_json, "w", encoding="utf-8") as jf:
                 json.dump(invoice_json, jf, ensure_ascii=False, indent=2)
 
