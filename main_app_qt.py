@@ -56,7 +56,7 @@ ADMIN_PASSWORD = "admin"
 CONFIG_FILE    = get_asset_path(os.path.join("env", "lighthouse_config.json"))
 GEMINI_API_KEY = ""
 STATIC_SALT    = "lh_app_secure_v1"  # Cố định cho password để không bị sai khi đổi máy
-APP_VERSION    = "v7.5"
+APP_VERSION    = "v7.6"
 
 # ──────────────────────────────────────────────
 #  Color Palette (Ocean Blue)

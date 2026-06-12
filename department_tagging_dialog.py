@@ -124,6 +124,7 @@ if _QT_AVAILABLE:
             super().__init__(parent)
             self._paths_by_name = {os.path.basename(p): p for p in image_paths}
             self.state = TaggingState([os.path.basename(p) for p in image_paths])
+            self._start_armed = False   # Down at end-of-list highlights Start
             self.setWindowTitle("Gán bộ phận cho hoá đơn")
             self._size_to_screen()
             self._build_ui(store_name)
@@ -220,11 +221,13 @@ if _QT_AVAILABLE:
 
         # ---- actions ----
         def _assign(self, dept):
+            self._start_armed = False
             self.state.assign(dept)
             self._refresh()
 
         def _on_row_changed(self, row):
             if row >= 0 and row != self.state.current_index:
+                self._start_armed = False
                 self.state.goto(row)
                 self._refresh()
 
@@ -273,7 +276,17 @@ if _QT_AVAILABLE:
                     "background:#2f6fb0; color:white; font-weight:700;"
                     if dept == cur_dept else ""
                 )
-            self.btn_start.setEnabled(self.state.is_complete())
+            complete = self.state.is_complete()
+            self.btn_start.setEnabled(complete)
+            if complete and self._start_armed:
+                self.btn_start.setStyleSheet(
+                    "background:#1e8f4e; color:white; font-weight:800;"
+                    "border:2px solid #7CFFB0; padding:6px;"
+                )
+                self.btn_start.setText("✅ Bắt đầu xử lý  (Enter)")
+            else:
+                self.btn_start.setStyleSheet("")
+                self.btn_start.setText("✅ Bắt đầu xử lý")
             self._render_image(name)
 
         def _render_image(self, name):
@@ -317,9 +330,17 @@ if _QT_AVAILABLE:
             if key == Qt.Key_Right:
                 self._rotate_right(); return
             if key in (Qt.Key_Up, Qt.Key_Backspace):
+                self._start_armed = False
                 self.state.back(); self._refresh(); return
             if key == Qt.Key_Down:
-                self.state.forward(); self._refresh(); return
+                before = self.state.current_index
+                self.state.forward()
+                # Down at the last image (no move left) arms the Start button so
+                # the user can press Enter to begin — only once everything is tagged.
+                self._start_armed = (
+                    self.state.current_index == before and self.state.is_complete()
+                )
+                self._refresh(); return
             if key in (Qt.Key_Return, Qt.Key_Enter):
                 self._on_start(); return
             if key == Qt.Key_Escape:
