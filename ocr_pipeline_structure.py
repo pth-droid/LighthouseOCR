@@ -31,6 +31,75 @@ def _should_use_vision_after_light_fallback(validation_report):
     return _missing_vision_critical_fields(validation_report)
 
 
+# --- Weak-result escalation (handwriting / garbled / total mismatch) ---
+WEAK_HANDWRITTEN_CONF = 0.90
+WEAK_ANY_CONF = 0.80
+GARBLED_NAME_RATIO = 0.30
+
+_VOWELS = set(
+    "aeiouy"
+    "àáảãạăằắẳẵặâầấẩẫậ"
+    "èéẻẽẹêềếểễệ"
+    "ìíỉĩị"
+    "òóỏõọôồốổỗộơờớởỡợ"
+    "ùúủũụưừứửữự"
+    "ỳýỷỹỵ"
+)
+
+
+def _is_garbled_name(name):
+    raw = str(name or "").strip()
+    if not raw:
+        return True
+    if any(ch in raw for ch in ("'", '"', "`", "\\")):
+        return True
+    if re.match(r"^\d", raw):                 # item names virtually never start with a digit
+        return True
+    alpha = re.sub(r"[^a-zà-ỹ]", "", raw.lower())
+    if len(alpha) <= 2:                       # essentially no readable word left
+        return True
+    if not any(ch in _VOWELS for ch in alpha):   # vowel-less gibberish
+        return True
+    return False
+
+
+def _garbled_name_ratio(invoice_json):
+    items = invoice_json.get("items") or []
+    if not items:
+        return 0.0
+    garbled = sum(1 for it in items if _is_garbled_name(it.get("product_name")))
+    return garbled / len(items)
+
+
+def _has_total_mismatch(invoice_json):
+    totals = invoice_json.get("totals") or {}
+    return bool(str(totals.get("total_discrepancy_warning") or "").strip())
+
+
+def _looks_handwritten(invoice_json):
+    doc = invoice_json.get("document_info") or {}
+    itype = str(doc.get("invoice_type") or "").upper()
+    if "HANDWRITTEN" in itype or "RETAIL" in itype:
+        return True
+    txn = invoice_json.get("transaction_info") or {}
+    no_number = not str(txn.get("invoice_number") or "").strip()
+    no_date = not str(txn.get("invoice_date") or "").strip()
+    return no_number and no_date
+
+
+def _should_escalate_weak_result(invoice_json, validation_report):
+    if _has_total_mismatch(invoice_json):
+        return True
+    if _garbled_name_ratio(invoice_json) >= GARBLED_NAME_RATIO:
+        return True
+    conf = _validation_confidence(validation_report)
+    if _looks_handwritten(invoice_json) and conf < WEAK_HANDWRITTEN_CONF:
+        return True
+    if conf < WEAK_ANY_CONF:
+        return True
+    return False
+
+
 def _has_reviewable_invoice_data(invoice_json):
     return bool(invoice_json.get("items") or [])
 
@@ -193,7 +262,6 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
 
     output_path = ""
     root_dir = input_dir.rstrip(os.sep).rstrip("/")
-    done_dir = os.path.join(os.path.dirname(root_dir), "DONE")
 
     valid_ext = (".png", ".jpg", ".jpeg")
     files = [f for f in os.listdir(root_dir) if f.lower().endswith(valid_ext)]
@@ -203,8 +271,12 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
         signals.status_txt.emit("Khong co anh!", "error")
         return output_path
 
+    # Each run gets its own timestamped folder under OUTPUT/ (JSON + images + Excel).
+    from output_paths import create_run_output_dir
+    done_dir = create_run_output_dir()
     os.makedirs(done_dir, exist_ok=True)
     _log(f"Thu muc dau vao: {root_dir}")
+    _log(f"Thu muc ket qua: {done_dir}")
     _log(f"PP-StructureV3 mac dinh: phat hien {len(files)} anh cho xu ly.")
 
     total = len(files)
@@ -337,10 +409,17 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
             invoice_json.setdefault("_structure_pipeline", {})
             invoice_json["_structure_pipeline"].update(json_rough.get("_structure_pipeline", {}))
 
+            invoice_json["_source_filename"] = filename
+            # Carry supplier/evidence trace forward so the saved route is complete,
+            # then stamp which actual pipeline path produced this result.
+            for _trace_key in ("_supplier_resolution", "_local_evidence_rescue"):
+                if _trace_key in json_rough and _trace_key not in invoice_json:
+                    invoice_json[_trace_key] = json_rough[_trace_key]
+            from pipeline_trace import build_route
+            invoice_json["_processing_route"] = build_route(invoice_json, "structure_default")
             with open(dest_json, "w", encoding="utf-8") as jf:
                 json.dump(invoice_json, jf, ensure_ascii=False, indent=2)
 
-            invoice_json["_source_filename"] = filename
             all_results.append(invoice_json)
             confidence = invoice_json.get("document_info", {}).get("confidence_score", 1.0)
             supplier = invoice_json.get("supplier_info", {}).get("supplier_name_code", "?")
