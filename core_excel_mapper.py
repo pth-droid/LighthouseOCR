@@ -29,12 +29,19 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from voucher_manager import get_next_voucher_number
 from core_rate_limiter import global_rate_limiter
 from constants import HIGH_RISK_CONF_THRESHOLD
-from path_utils import get_root_dir
+from path_utils import get_root_dir, get_asset_path
 
 # ---- Paths ----
+# _ROOT_DIR is the app root (next to the .exe / project dir) — used for writable
+# output like the DONE folder.
 _ROOT_DIR = get_root_dir()
-_TEMPLATE_FILE = os.path.join(_ROOT_DIR, "Data structure", "PNMH-Mẫu phiếu nhập mua hàng.xlsx")
-_CHIPHI_TEMPLATE_FILE = os.path.join(_ROOT_DIR, "Data structure", "Mẫu Nhập Chi phí.xlsx")
+# Templates are read-only assets: resolve with get_asset_path (root-first, then
+# _internal fallback) so they load identically in source and in PyInstaller
+# builds — whether "Data structure" sits next to the exe (user-editable, FULL
+# build) or only inside _internal (bundled fallback). data_manager.py resolves
+# the same way for consistency.
+_TEMPLATE_FILE = get_asset_path(os.path.join("Data structure", "PNMH-Mẫu phiếu nhập mua hàng.xlsx"))
+_CHIPHI_TEMPLATE_FILE = get_asset_path(os.path.join("Data structure", "Mẫu Nhập Chi phí.xlsx"))
 
 # ---- Color palette ----
 _FILL_NONE      = PatternFill(fill_type=None)

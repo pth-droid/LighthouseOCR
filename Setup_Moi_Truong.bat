@@ -33,34 +33,35 @@ if %errorLevel% equ 0 (
 )
 
 echo.
-echo [1/3] Kiem tra Microsoft Visual C++ Redistributable...
-if exist "%SystemRoot%\System32\msvcp140.dll" (
-    echo [INFO] Microsoft Visual C++ Redistributable da co san.
-) else (
-    if "%HAS_ADMIN%"=="1" (
-        echo [INFO] Dang tai bo cai tu Microsoft...
-        powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile '%INSTALLER%'"
-        if errorlevel 1 (
-            echo [ERROR] Khong the tai bo cai Microsoft Visual C++ Redistributable.
-            goto abort
-        )
-        if not exist "%INSTALLER%" (
-            echo [ERROR] Khong tim thay file bo cai Microsoft Visual C++ sau khi tai.
-            goto abort
-        )
-
-        echo [INFO] Dang cai dat Microsoft Visual C++ Redistributable...
-        start /wait "" "%INSTALLER%" /install /quiet /norestart
-        if errorlevel 1 (
-            echo [WARNING] Cai dat VC++ Redist tra ve ma loi %errorLevel%. Van tiep tuc cai Python portable.
-        ) else (
-            echo [OK] Cai dat VC++ Redist hoan tat.
-        )
-        if exist "%INSTALLER%" del "%INSTALLER%"
+echo [1/3] Cap nhat Microsoft Visual C++ Redistributable...
+:: LUU Y: Khong chi kiem tra "msvcp140.dll co ton tai" - mot ban CU van ton tai
+:: nhung THIEU export ordinal moi (vi du ordinal 380), gay loi
+:: "The ordinal N could not be located in the dynamic link library" khi chay app
+:: va lam hong giai ma JPG (preview hoa don bi trang). Vi vay luon cai/cap nhat
+:: ban VC++ Redist moi nhat (bo cai idempotent, tu bo qua neu da moi).
+if "%HAS_ADMIN%"=="1" (
+    echo [INFO] Dang tai ban VC++ Redist moi nhat tu Microsoft...
+    powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile '%INSTALLER%'"
+    if errorlevel 1 (
+        echo [WARNING] Khong the tai bo cai VC++ Redist (kiem tra Internet). Van tiep tuc.
     ) else (
-        echo [WARNING] Thieu VC++ Redistributable va script khong co quyen Admin.
-        echo [WARNING] Phan cai Python portable van tiep tuc, nhung may co the can cai VC++ thu cong de chay mot so thu vien native.
+        if not exist "%INSTALLER%" (
+            echo [WARNING] Khong tim thay file bo cai VC++ sau khi tai. Van tiep tuc.
+        ) else (
+            echo [INFO] Dang cai/cap nhat Microsoft Visual C++ Redistributable...
+            start /wait "" "%INSTALLER%" /install /quiet /norestart
+            if errorlevel 1 (
+                echo [WARNING] Cai dat VC++ Redist tra ve ma loi %errorLevel%. Van tiep tuc cai Python portable.
+            ) else (
+                echo [OK] Cai/cap nhat VC++ Redist hoan tat.
+            )
+            if exist "%INSTALLER%" del "%INSTALLER%"
+        )
     )
+) else (
+    echo [WARNING] Khong co quyen Admin nen khong the cai/cap nhat VC++ Redistributable.
+    echo [WARNING] Neu may dang co ban VC++ cu, app co the bao loi "ordinal could not be located".
+    echo [WARNING] Hay chay lai script nay bang "Run as Administrator", hoac cai thu cong: https://aka.ms/vs/17/release/vc_redist.x64.exe
 )
 
 echo.

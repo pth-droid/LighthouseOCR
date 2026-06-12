@@ -5,7 +5,9 @@ import sys
 import tempfile
 import time
 import warnings
+from contextlib import redirect_stdout
 
+sys.dont_write_bytecode = True
 os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
 os.environ.pop("FLAGS_selected_gpus", None)
 warnings.filterwarnings("ignore")
@@ -108,24 +110,37 @@ def _format_runtime_error(exc):
     return message
 
 
-def run_structure(image_path, output_path):
-    try:
-        from paddleocr import PPStructureV3
+def _create_pipeline():
+    from paddleocr import PPStructureV3
 
-        started_at = time.perf_counter()
-        pipeline = PPStructureV3(
-            use_doc_orientation_classify=True,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-            use_table_recognition=True,
-            use_formula_recognition=False,
-            use_chart_recognition=False,
-            use_seal_recognition=False,
-        )
-        result = pipeline.predict(image_path, visualize=False)
-        output = _build_output(result, time.perf_counter() - started_at)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(output, f, ensure_ascii=False)
+    return PPStructureV3(
+        use_doc_orientation_classify=True,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        use_table_recognition=True,
+        use_formula_recognition=False,
+        use_chart_recognition=False,
+        use_seal_recognition=False,
+    )
+
+
+def _predict_structure(pipeline, image_path):
+    started_at = time.perf_counter()
+    result = pipeline.predict(image_path, visualize=False)
+    return _build_output(result, time.perf_counter() - started_at)
+
+
+def _write_structure_output(output_path, output):
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False)
+
+
+def run_structure(image_path, output_path, pipeline=None):
+    try:
+        with redirect_stdout(sys.stderr):
+            active_pipeline = pipeline if pipeline is not None else _create_pipeline()
+            output = _predict_structure(active_pipeline, image_path)
+        _write_structure_output(output_path, output)
         return 0
     except Exception as exc:
         import traceback
@@ -133,6 +148,55 @@ def run_structure(image_path, output_path):
         print(f"ERROR: {_format_runtime_error(exc)}", file=sys.stderr)
         traceback.print_exc()
         return 1
+
+
+def _write_worker_response(output_stream, response):
+    output_stream.write(json.dumps(response, ensure_ascii=False) + "\n")
+    output_stream.flush()
+
+
+def run_worker(input_stream=None, output_stream=None):
+    input_stream = input_stream or sys.stdin
+    output_stream = output_stream or sys.stdout
+    try:
+        with redirect_stdout(sys.stderr):
+            pipeline = _create_pipeline()
+    except Exception as exc:
+        import traceback
+
+        print(f"ERROR: {_format_runtime_error(exc)}", file=sys.stderr)
+        traceback.print_exc()
+        return 1
+
+    for line in input_stream:
+        line = line.strip()
+        if not line:
+            continue
+        job_id = None
+        try:
+            job = json.loads(line)
+            job_id = job.get("job_id")
+            image_path = job["image_path"]
+            output_path = job["output_path"]
+            with redirect_stdout(sys.stderr):
+                output = _predict_structure(pipeline, image_path)
+            _write_structure_output(output_path, output)
+            _write_worker_response(output_stream, {
+                "ok": True,
+                "job_id": job_id,
+                "output_path": output_path,
+                "elapsed_seconds": output.get("elapsed_seconds", 0.0),
+            })
+        except Exception as exc:
+            import traceback
+
+            _write_worker_response(output_stream, {
+                "ok": False,
+                "job_id": job_id,
+                "error": _format_runtime_error(exc),
+                "traceback": traceback.format_exc(),
+            })
+    return 0
 
 
 def run_check():
@@ -175,7 +239,9 @@ def run_check():
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--check":
         sys.exit(run_check())
+    if len(sys.argv) == 2 and sys.argv[1] == "--worker":
+        sys.exit(run_worker())
     if len(sys.argv) != 3:
-        print("Usage: ocr_structure_runner.py <image_path> <output_json_path> OR ocr_structure_runner.py --check", file=sys.stderr)
+        print("Usage: ocr_structure_runner.py <image_path> <output_json_path> OR ocr_structure_runner.py --check OR ocr_structure_runner.py --worker", file=sys.stderr)
         sys.exit(1)
     sys.exit(run_structure(sys.argv[1], sys.argv[2]))

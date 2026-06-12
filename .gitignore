@@ -183,3 +183,8 @@ ocr_calculation_skill.md
 ocr_invoice_skill.md
 ocr_text_structurer_skill.md
 ocr_vision_handwritten_skill.md
+
+# Build / deploy transient artifacts
+.build_tmp/
+codex_deploy_build.pid
+%SystemDrive%/

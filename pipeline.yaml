@@ -18,8 +18,8 @@ logic:
   ocr_extraction:
     router: "Default: PP-StructureV3 pipeline (ocr_pipeline_structure.py); selectable legacy_hybrid keeps old Paddle + Gemini route."
     default_path:
-      engine: "PP-StructureV3 + PP-OCRv5 via isolated ocr_structure_runner.py subprocess"
-      action: "Analyze layout, text, and tables locally. Normalize the result into raw_text, tokens, regions, and tables without retaining large debug image payloads."
+      engine: "PP-StructureV3 + PP-OCRv5 via isolated persistent ocr_structure_runner.py worker"
+      action: "Analyze layout, text, and tables locally. Keep the PP-StructureV3 worker alive across images in the same folder run so the Paddle model is not reloaded per invoice. Normalize the result into raw_text, tokens, regions, and tables without retaining large debug image payloads."
     legacy_path:
       condition: "User selects legacy_hybrid in system settings"
       engine: "Old PaddleOCR text route with Flash/Pro Gemini fallback"

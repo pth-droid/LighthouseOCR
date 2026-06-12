@@ -19,15 +19,84 @@
 #     OpenCV stays bundled because image preprocessing runs in the main app.
 #   - Deploy_Build.ps1 handles runtime copy and startup bootstrap scripts.
 
+import os
+import glob
+
+
+def _collect_vc_runtime_dlls():
+    """Bundle the MSVC C++ runtime app-locally (into the _internal root).
+
+    Why: cv2, PIL._imaging and the embedded Python at the bundle root link
+    against msvcp140.dll / vcruntime140*.dll. PyInstaller does NOT copy
+    msvcp140.dll to the root; it assumes the target machine has an up-to-date
+    Visual C++ Redistributable. On client machines with an OLD system
+    msvcp140.dll (missing newer export ordinals, e.g. ordinal 380) this caused
+    "The ordinal N could not be located in the dynamic link library" crashes and
+    silently broke Qt qjpeg.dll / PIL JPEG decoding (blank invoice previews).
+    Shipping these DLLs alongside the exe makes the app immune to the client's
+    system runtime version. Redistribution is permitted under the VC++ Redist
+    license.
+    """
+    names = [
+        'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+        'vcruntime140.dll', 'vcruntime140_1.dll',
+        'concrt140.dll', 'vcomp140.dll',
+    ]
+    search_dirs = []
+    sysroot = os.environ.get('SystemRoot', r'C:\Windows')
+    search_dirs.append(os.path.join(sysroot, 'System32'))
+    for base in (
+        r'C:\Program Files\Microsoft Visual Studio',
+        r'C:\Program Files (x86)\Microsoft Visual Studio',
+    ):
+        search_dirs.extend(sorted(
+            glob.glob(os.path.join(
+                base, '*', '*', 'VC', 'Redist', 'MSVC', '*', 'x64',
+                'Microsoft.VC*.CRT')),
+            reverse=True,
+        ))
+    found = {}
+    for name in names:
+        for d in search_dirs:
+            cand = os.path.join(d, name)
+            if os.path.isfile(cand):
+                found[name] = cand
+                break
+    missing = [n for n in names if n not in found]
+    if missing:
+        print('[LighthouseOCR.spec] WARNING: VC++ runtime DLLs not found: '
+              + ', '.join(missing))
+    return [(path, '.') for path in found.values()]
+
+
+vc_runtime_binaries = _collect_vc_runtime_dlls()
+
+if os.environ.get('LHOCR_SKIP_WIN_RESOURCE_UPDATE') == '1':
+    from PyInstaller.utils.win32 import icon, versioninfo, winmanifest, winresource
+
+    def _lhocr_skip_windows_resource_update(*args, **kwargs):
+        return None
+
+    winresource.remove_all_resources = _lhocr_skip_windows_resource_update
+    icon.CopyIcons = _lhocr_skip_windows_resource_update
+    versioninfo.write_version_info_to_executable = _lhocr_skip_windows_resource_update
+    winmanifest.write_manifest_to_executable = _lhocr_skip_windows_resource_update
+
 block_cipher = None
 
 a = Analysis(
     ['main_app_qt.py'],
     pathex=[],
-    binaries=[],
+    binaries=vc_runtime_binaries,
     datas=[
-        # Master data files — placed alongside the exe so users can edit them
-        ('Data structure', 'Data structure'),
+        # NOTE: "Data structure" is intentionally NOT bundled here. It is
+        # user-editable master data (templates, master lists, Tu_dien_alias.csv)
+        # and must be a SINGLE source of truth alongside the exe so in-app edits
+        # (e.g. the Alias Dictionary editor, which WRITES the CSV) persist across
+        # updates. Bundling a second copy into _internal caused drift and silent
+        # data loss (edits written into _internal are wiped when a new build
+        # replaces the _internal folder). Deploy_Build.ps1 places it at the app
+        # root for FULL builds; UPDATE builds leave the client's copy untouched.
         # Runtime assets
         ('app_style.qss', '.'),
         ('app_logo.png', '.'),

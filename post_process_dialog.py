@@ -4,6 +4,7 @@ import shutil
 import copy
 import json
 from PIL import Image as PilImage
+from PIL import ImageOps
 import openpyxl
 import datetime
 import re
@@ -14,7 +15,7 @@ from PyQt5.QtWidgets import (
     QSplitter, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QEvent, QPoint, QSettings, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap, QIcon
+from PyQt5.QtGui import QColor, QKeyEvent, QTextCursor, QPixmap, QIcon, QImage
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 from path_utils import get_root_dir, get_asset_path
@@ -321,6 +322,27 @@ def _resolve_invoice_image_path(pnmh_path: str, image_name: str) -> str:
     return candidates[0]
 
 
+def _load_invoice_qimage_with_pillow(img_path: str) -> QImage:
+    with PilImage.open(img_path) as img:
+        img = ImageOps.exif_transpose(img)
+        rgba = img.convert("RGBA")
+        width, height = rgba.size
+        data = rgba.tobytes("raw", "RGBA")
+        qimage = QImage(data, width, height, width * 4, QImage.Format_RGBA8888)
+        return qimage.copy()
+
+
+def _load_invoice_pixmap(img_path: str) -> QPixmap:
+    pix = QPixmap(img_path)
+    if not pix.isNull():
+        return pix
+
+    qimage = _load_invoice_qimage_with_pillow(img_path)
+    if qimage.isNull():
+        return QPixmap()
+    return QPixmap.fromImage(qimage)
+
+
 # ════════════════════════════════════════════════════════════════════════════
 class PostProcessDialog(QDialog):
     def __init__(self, pnmh_path: str, chiphi_path: str | None,
@@ -379,25 +401,63 @@ class PostProcessDialog(QDialog):
         super().showEvent(event)
         QTimer.singleShot(0, self._apply_initial_splitter_sizes)
 
-    def _apply_initial_splitter_sizes(self):
+    # Minimum visible width for the invoice image panel (matches scroll.setMinimumWidth(200)).
+    _IMG_PANEL_MIN_WIDTH = 200
+
+    def _apply_initial_splitter_sizes(self, _attempt: int = 0):
         settings = QSettings("LighthouseOCR", "PostProcessDialog")
+        # Per-splitter guard so we size each one exactly once and never re-clobber
+        # a layout the user has since dragged.
+        if not hasattr(self, "_splitters_sized"):
+            self._splitters_sized = set()
+
+        pending = False
         for attr, key, default_ratio in [
             ('pnmh_splitter',   'pnmh_splitter',   (0.65, 0.35)),
             ('chiphi_splitter', 'chiphi_splitter',  (0.65, 0.35)),
         ]:
+            if attr in self._splitters_sized:
+                continue
             splitter = getattr(self, attr, None)
             if splitter is None:
                 continue
+
+            # If the splitter has no width yet (e.g. the ChiPhi tab has not been
+            # shown, or timing/DPI on some clients), leave it for a later attempt.
+            # setChildrenCollapsible(False) already guarantees the panel stays
+            # visible (>= its minimum) in the meantime.
+            total = splitter.width()
+            if total <= 0:
+                pending = True
+                continue
+
+            # Restore the user's saved layout — but AUTO-HEAL a poisoned state: if
+            # a previous session persisted the image panel collapsed (size 0 /
+            # below its minimum), restoring it verbatim would make the panel
+            # invisible forever (the registry value survives every rebuild). In
+            # that case ignore the saved sizes and apply the default ratio.
+            applied = False
             saved = settings.value(key)
             if saved:
                 try:
-                    splitter.setSizes([int(s) for s in saved])
-                    continue
+                    sizes = [int(s) for s in saved]
+                    if len(sizes) >= 2 and sizes[1] >= self._IMG_PANEL_MIN_WIDTH:
+                        splitter.setSizes(sizes)
+                        applied = True
                 except (ValueError, TypeError):
                     pass
-            total = splitter.width()
-            if total > 0:
-                splitter.setSizes([int(total * default_ratio[0]), int(total * default_ratio[1])])
+
+            if not applied:
+                img_w = max(int(total * default_ratio[1]), self._IMG_PANEL_MIN_WIDTH)
+                table_w = max(total - img_w, 1)
+                splitter.setSizes([table_w, img_w])
+
+            self._splitters_sized.add(attr)
+
+        # Bounded retry only for splitters still lacking a width (cap ~1s). The
+        # ChiPhi tab may never be opened — that's fine, collapsing is disabled.
+        if pending and _attempt < 20:
+            QTimer.singleShot(50, lambda: self._apply_initial_splitter_sizes(_attempt + 1))
 
     def _load_settings(self):
         settings = QSettings("LighthouseOCR", "PostProcessDialog")
@@ -631,6 +691,10 @@ class PostProcessDialog(QDialog):
         # â”€â”€ Resize weights: table 65%, image panel 35% â”€â”€
         self.pnmh_splitter.setStretchFactor(0, 65)
         self.pnmh_splitter.setStretchFactor(1, 35)
+        # Never let the image panel collapse to 0 width (its minimum is 200px).
+        # Without this, Qt could hide the panel entirely and a saved 0-size in the
+        # registry would make it disappear permanently. See _apply_initial_splitter_sizes.
+        self.pnmh_splitter.setChildrenCollapsible(False)
 
         layout.addWidget(self.pnmh_splitter, stretch=1)
 
@@ -734,7 +798,7 @@ class PostProcessDialog(QDialog):
             if not os.path.exists(img_path):
                 self._clear_image(panel_id, f"Không tìm thấy ảnh:\n{img_path}")
                 return
-            pix = QPixmap(img_path)
+            pix = _load_invoice_pixmap(img_path)
             if pix.isNull():
                 self._clear_image(panel_id, "Không thể tải ảnh")
                 return
@@ -878,6 +942,7 @@ class PostProcessDialog(QDialog):
 
         self.chiphi_splitter.setStretchFactor(0, 65)
         self.chiphi_splitter.setStretchFactor(1, 35)
+        self.chiphi_splitter.setChildrenCollapsible(False)
 
         layout.addWidget(self.chiphi_splitter, stretch=1)
 

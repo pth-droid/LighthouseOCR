@@ -122,6 +122,7 @@ class LocalPaddleOCREngine:
             sub_env = os.environ.copy()
             sub_env.pop('PYTHONHOME', None)
             sub_env.pop('PYTHONPATH', None)
+            sub_env['PYTHONDONTWRITEBYTECODE'] = '1'
 
             # stdout is DEVNULL because all results go to the output_path JSON file.
             # This prevents a pipe-buffer deadlock: PaddleOCR writes initialization

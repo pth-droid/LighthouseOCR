@@ -51,11 +51,32 @@ class StructurePaddleOCREngineTests(unittest.TestCase):
         self.assertNotIn("PYTHONHOME", env)
         self.assertNotIn("PYTHONPATH", env)
         self.assertEqual(env["KEEP_ME"], "ok")
+        self.assertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
 
     def test_subprocess_has_timeout_to_avoid_infinite_freeze(self):
         engine = StructurePaddleOCREngine()
 
         self.assertGreaterEqual(engine.subprocess_timeout_seconds, 60)
+
+    def test_worker_command_uses_persistent_runner_mode(self):
+        engine = StructurePaddleOCREngine()
+
+        command = engine._build_worker_command()
+
+        self.assertEqual(command[-1], "--worker")
+        self.assertIn(engine.runner_script, command)
+
+    def test_worker_subprocess_uses_pipes_and_hidden_window(self):
+        engine = StructurePaddleOCREngine()
+
+        options = engine._build_worker_popen_kwargs(stderr_target=subprocess.DEVNULL)
+
+        self.assertIs(options["stdin"], subprocess.PIPE)
+        self.assertIs(options["stdout"], subprocess.PIPE)
+        self.assertIs(options["stderr"], subprocess.DEVNULL)
+        self.assertIn("startupinfo", options)
+        if subprocess.STARTUPINFO is not None:
+            self.assertIsNotNone(options["startupinfo"])
 
 
 if __name__ == "__main__":

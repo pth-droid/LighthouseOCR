@@ -5,7 +5,7 @@
 
 Ứng dụng OCR hóa đơn tự động cho nghiệp vụ nhập kho (PNMH) và nhập chi phí, sử dụng PaddleOCR + Google Gemini.
 
-Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction, business KIE, local evidence rescue, local-first supplier enrichment, Python financial calculation, and Gemini Flash as the first text fallback when local validation or item mapping is weak. Local structure output must include line-item pricing before it is accepted as strong enough. Supplier values that look like salesperson/NVBH/HRC lines are treated as suspicious; the app first checks local header/supplier evidence and leaves NCC empty if no strong evidence is found. If local OCR is extremely weak or the light fallback returns no line items/total amount, the pipeline escalates to the Pro Vision model so handwritten/creased invoices do not enter review as empty JSON. If all fallback layers still produce no line items, the app keeps the invoice out of blank post-process review. During Excel export, unmapped items stay in PNMH when the same invoice already has mapped inventory items, so a missing master alias does not silently move a product row to Chi phí. Legacy Paddle + Gemini mode remains selectable in system settings.
+Default OCR pipeline: PP-StructureV3 + PP-OCRv5 local extraction through a persistent isolated worker, business KIE, local evidence rescue, local-first supplier enrichment, Python financial calculation, and Gemini Flash as the first text fallback when local validation or item mapping is weak. Local structure output must include line-item pricing before it is accepted as strong enough. Supplier values that look like salesperson/NVBH/HRC lines are treated as suspicious; the app first checks local header/supplier evidence and leaves NCC empty if no strong evidence is found. If local OCR is extremely weak or the light fallback returns no line items/total amount, the pipeline escalates to the Pro Vision model so handwritten/creased invoices do not enter review as empty JSON. If all fallback layers still produce no line items, the app keeps the invoice out of blank post-process review. During Excel export, unmapped items stay in PNMH when the same invoice already has mapped inventory items, so a missing master alias does not silently move a product row to Chi phí. Legacy Paddle + Gemini mode remains selectable in system settings.
 
 Dynamic Gemini model discovery shows known input/output token prices beside model names in the configuration UI. The app still saves only the clean model id, so labels with prices are safe for API calls.
 
@@ -155,8 +155,8 @@ LighthouseOCR/
 ├── data_manager.py         # Quản lý dữ liệu master + alias
 ├── module_paddle_ocr.py    # Wrapper gọi PaddleOCR qua subprocess
 ├── ocr_pipeline_structure.py # Default PP-StructureV3 pipeline
-├── ocr_structure_runner.py  # Isolated PP-StructureV3 subprocess
-├── module_paddle_structure_ocr.py # PP-StructureV3 app wrapper
+├── ocr_structure_runner.py  # Isolated PP-StructureV3 worker subprocess
+├── module_paddle_structure_ocr.py # PP-StructureV3 app wrapper + worker lifecycle
 ├── business_kie.py          # Business KIE from master data
 ├── supplier_enrichment.py   # Local-first NCC resolver with confidence/evidence
 ├── invoice_json_builder.py  # Downstream-compatible invoice JSON builder
@@ -201,7 +201,8 @@ LighthouseOCR/
    - Denoising, CLAHE, Sharpening
 
 2. **PP-StructureV3 + PP-OCRv5**:
-   - Runs layout, text, and table extraction through an isolated subprocess.
+   - Runs layout, text, and table extraction through an isolated worker subprocess.
+   - During a folder run, the worker keeps the heavy Paddle model loaded and accepts multiple image jobs, avoiding model reload for every invoice. For diagnostics only, `OCR_STRUCTURE_DISABLE_WORKER=1` reverts to one-shot subprocess mode.
    - Normalizes output into text, tokens, regions, and tables.
    - Does not keep large debug image payloads in runtime JSON.
 
@@ -220,6 +221,7 @@ LighthouseOCR/
 - Bảng PNMH (Phiếu Nhập Mua Hàng) với đầy đủ cột Excel
 - Bảng Chi Phí (Nhập chi phí hạch toán Nợ 6421 / Có 331)
 - Panel xem ảnh hóa đơn với zoom (cuộn chuột), pan (kéo chuột trái)
+- Client build fallback: if Qt cannot decode a JPG through `QPixmap`, the preview panel loads the image through Pillow and converts it to `QImage`.
 - Menu chuột phải trên ảnh:
   - 📂 Mở thư mục chứa ảnh (reveal + chọn file trong Explorer)
   - ↩ Xoay trái 90° / ↪ Xoay phải 90° (lưu lại file)
