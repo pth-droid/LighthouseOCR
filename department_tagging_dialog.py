@@ -144,6 +144,9 @@ if _QT_AVAILABLE:
 
         # ---- UI construction ----
         def _build_ui(self, store_name):
+            # The dialog owns the keyboard: children are non-focusable (below) so
+            # they never steal hotkeys (digits / arrows) from keyPressEvent.
+            self.setFocusPolicy(Qt.StrongFocus)
             root = QHBoxLayout(self)
 
             left = QVBoxLayout()
@@ -160,17 +163,19 @@ if _QT_AVAILABLE:
                 btn = QPushButton(f"[{label}]  {dept}")
                 btn.setMinimumHeight(48)
                 btn.setAutoDefault(False)
+                btn.setFocusPolicy(Qt.NoFocus)
                 btn.clicked.connect(lambda _=False, d=dept: self._assign(d))
                 left.addWidget(btn)
                 self._dept_buttons[dept] = btn
 
             self.list_files = QListWidget()
+            self.list_files.setFocusPolicy(Qt.NoFocus)   # don't eat digit/arrow keys
             self.list_files.currentRowChanged.connect(self._on_row_changed)
             left.addWidget(self.list_files, 1)
 
             self.btn_start = QPushButton("✅ Bắt đầu xử lý")
-            self.btn_start.setDefault(True)
-            self.btn_start.setAutoDefault(True)
+            self.btn_start.setAutoDefault(False)
+            self.btn_start.setFocusPolicy(Qt.NoFocus)
             self.btn_start.clicked.connect(self._on_start)
             left.addWidget(self.btn_start)
 
@@ -189,6 +194,7 @@ if _QT_AVAILABLE:
             for b, fn in ((self.btn_rot_left, self._rotate_left),
                           (self.btn_rot_right, self._rotate_right)):
                 b.setAutoDefault(False)
+                b.setFocusPolicy(Qt.NoFocus)
                 b.clicked.connect(lambda _=False, f=fn: f())
                 top_row.addWidget(b)
             right.addLayout(top_row)
@@ -225,6 +231,9 @@ if _QT_AVAILABLE:
         def _sync_list_selection(self):
             self.list_files.blockSignals(True)
             self.list_files.setCurrentRow(self.state.current_index)
+            item = self.list_files.item(self.state.current_index)
+            if item is not None:
+                self.list_files.scrollToItem(item)
             self.list_files.blockSignals(False)
 
         def _rotate_left(self):
@@ -291,6 +300,7 @@ if _QT_AVAILABLE:
 
         def showEvent(self, event):
             super().showEvent(event)
+            self.setFocus()   # dialog owns the keyboard from the first keypress
             self._render_image(self.state.current_filename() or "")
 
         def resizeEvent(self, event):
