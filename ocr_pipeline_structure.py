@@ -3,6 +3,8 @@ import os
 import re
 import time
 
+from departments import VALID_DEPARTMENTS
+
 
 def _should_keep_processing(stop_event):
     return not (stop_event and stop_event.is_set())
@@ -98,6 +100,20 @@ def _should_escalate_weak_result(invoice_json, validation_report):
     if conf < WEAK_ANY_CONF:
         return True
     return False
+
+
+def _apply_department_override(invoice_json, dept):
+    """Authoritatively set the user-tagged department on the invoice JSON.
+
+    No-op when dept is not one of the 4 valid codes. Safe to call repeatedly
+    and on a fresh JSON returned by a fallback."""
+    dept = str(dept or "").strip().upper()
+    if dept not in VALID_DEPARTMENTS:
+        return invoice_json
+    txn = invoice_json.setdefault("transaction_info", {})
+    txn["department"] = dept
+    invoice_json["_department_source"] = "user_tag"
+    return invoice_json
 
 
 def _has_reviewable_invoice_data(invoice_json):
