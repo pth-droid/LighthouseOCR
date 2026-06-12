@@ -13,6 +13,7 @@ class TaggingState:
     def __init__(self, filenames):
         self.filenames = list(filenames)
         self.assignments = {}          # filename -> dept (UPPER, valid only)
+        self.rotations = {}            # filename -> display angle (0/90/180/270)
         self.current_index = 0
 
     @property
@@ -60,6 +61,21 @@ class TaggingState:
     def department_of(self, filename):
         return self.assignments.get(filename)
 
+    def rotation_of(self, filename):
+        return self.rotations.get(filename, 0)
+
+    def _rotate(self, delta):
+        fn = self.current_filename()
+        if fn is None:
+            return
+        self.rotations[fn] = (self.rotations.get(fn, 0) + delta) % 360
+
+    def rotate_right(self):
+        self._rotate(90)
+
+    def rotate_left(self):
+        self._rotate(-90)
+
     def assigned_count(self):
         return len(self.assignments)
 
@@ -80,9 +96,10 @@ try:
     import os
 
     from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QTransform
     from PyQt5.QtWidgets import (
-        QDialog, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QListWidget,
-        QListWidgetItem, QWidget, QMessageBox, QSizePolicy,
+        QApplication, QDialog, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
+        QListWidget, QListWidgetItem, QWidget, QMessageBox, QSizePolicy, QMenu,
     )
 
     _QT_AVAILABLE = True
@@ -108,9 +125,22 @@ if _QT_AVAILABLE:
             self._paths_by_name = {os.path.basename(p): p for p in image_paths}
             self.state = TaggingState([os.path.basename(p) for p in image_paths])
             self.setWindowTitle("Gán bộ phận cho hoá đơn")
-            self.resize(1100, 760)
+            self._size_to_screen()
             self._build_ui(store_name)
             self._refresh()
+
+        def _size_to_screen(self):
+            # Open large so the invoice image is easy to read; ~92% of the screen.
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                geo = screen.availableGeometry()
+                self.resize(int(geo.width() * 0.92), int(geo.height() * 0.92))
+                self.move(
+                    geo.x() + (geo.width() - self.width()) // 2,
+                    geo.y() + (geo.height() - self.height()) // 2,
+                )
+            else:
+                self.resize(1400, 950)
 
         # ---- UI construction ----
         def _build_ui(self, store_name):
@@ -129,6 +159,7 @@ if _QT_AVAILABLE:
                 label = key - Qt.Key_0
                 btn = QPushButton(f"[{label}]  {dept}")
                 btn.setMinimumHeight(48)
+                btn.setAutoDefault(False)
                 btn.clicked.connect(lambda _=False, d=dept: self._assign(d))
                 left.addWidget(btn)
                 self._dept_buttons[dept] = btn
@@ -138,6 +169,8 @@ if _QT_AVAILABLE:
             left.addWidget(self.list_files, 1)
 
             self.btn_start = QPushButton("✅ Bắt đầu xử lý")
+            self.btn_start.setDefault(True)
+            self.btn_start.setAutoDefault(True)
             self.btn_start.clicked.connect(self._on_start)
             left.addWidget(self.btn_start)
 
@@ -147,14 +180,34 @@ if _QT_AVAILABLE:
             root.addWidget(left_w)
 
             right = QVBoxLayout()
+            top_row = QHBoxLayout()
             self.lbl_header = QLabel()
             self.lbl_header.setStyleSheet("font-weight:600;")
-            right.addWidget(self.lbl_header)
+            top_row.addWidget(self.lbl_header, 1)
+            self.btn_rot_left = QPushButton("↺ Xoay trái")
+            self.btn_rot_right = QPushButton("↻ Xoay phải")
+            for b, fn in ((self.btn_rot_left, self._rotate_left),
+                          (self.btn_rot_right, self._rotate_right)):
+                b.setAutoDefault(False)
+                b.clicked.connect(lambda _=False, f=fn: f())
+                top_row.addWidget(b)
+            right.addLayout(top_row)
+
             self.lbl_image = QLabel("(không có ảnh)")
             self.lbl_image.setAlignment(Qt.AlignCenter)
             self.lbl_image.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+            self.lbl_image.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.lbl_image.customContextMenuRequested.connect(self._show_image_menu)
             right.addWidget(self.lbl_image, 1)
             root.addLayout(right, 1)
+
+            self.lbl_hint = QLabel(
+                "Phím: 1-4 gán bộ phận • ←/→ xoay ảnh • ↑/↓ hoặc Backspace đổi ảnh • "
+                "Enter bắt đầu • Esc huỷ"
+            )
+            self.lbl_hint.setStyleSheet("color:#9bb8d0; font-size:11px;")
+            self.lbl_hint.setWordWrap(True)
+            left.addWidget(self.lbl_hint)
 
             for name in self.state.filenames:
                 self.list_files.addItem(QListWidgetItem(name))
@@ -173,6 +226,20 @@ if _QT_AVAILABLE:
             self.list_files.blockSignals(True)
             self.list_files.setCurrentRow(self.state.current_index)
             self.list_files.blockSignals(False)
+
+        def _rotate_left(self):
+            self.state.rotate_left()
+            self._render_image(self.state.current_filename() or "")
+
+        def _rotate_right(self):
+            self.state.rotate_right()
+            self._render_image(self.state.current_filename() or "")
+
+        def _show_image_menu(self, pos):
+            menu = QMenu(self)
+            menu.addAction("↺ Xoay trái", self._rotate_left)
+            menu.addAction("↻ Xoay phải", self._rotate_right)
+            menu.exec_(self.lbl_image.mapToGlobal(pos))
 
         def _on_start(self):
             if self.state.is_complete():
@@ -203,15 +270,24 @@ if _QT_AVAILABLE:
         def _render_image(self, name):
             path = self._paths_by_name.get(name)
             if not path or not os.path.exists(path):
+                self.lbl_image.clear()
                 self.lbl_image.setText("Không tải được ảnh")
                 return
             from post_process_dialog import _load_invoice_pixmap
             pix = _load_invoice_pixmap(path)
             if pix.isNull():
+                self.lbl_image.clear()
                 self.lbl_image.setText("Không tải được ảnh")
                 return
-            target_w = max(200, self.lbl_image.width())
-            self.lbl_image.setPixmap(pix.scaledToWidth(target_w, Qt.SmoothTransformation))
+            angle = self.state.rotation_of(name)
+            if angle:
+                pix = pix.transformed(QTransform().rotate(angle), Qt.SmoothTransformation)
+            # Fit within the panel (both dimensions) so rotated images aren't clipped.
+            avail_w = max(200, self.lbl_image.width())
+            avail_h = max(200, self.lbl_image.height())
+            self.lbl_image.setPixmap(
+                pix.scaled(avail_w, avail_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
 
         def showEvent(self, event):
             super().showEvent(event)
@@ -226,9 +302,13 @@ if _QT_AVAILABLE:
             key = event.key()
             if key in _DEPT_HOTKEYS:
                 self._assign(_DEPT_HOTKEYS[key]); return
-            if key in (Qt.Key_Backspace, Qt.Key_Left):
-                self.state.back(); self._refresh(); return
+            if key == Qt.Key_Left:
+                self._rotate_left(); return
             if key == Qt.Key_Right:
+                self._rotate_right(); return
+            if key in (Qt.Key_Up, Qt.Key_Backspace):
+                self.state.back(); self._refresh(); return
+            if key == Qt.Key_Down:
                 self.state.forward(); self._refresh(); return
             if key in (Qt.Key_Return, Qt.Key_Enter):
                 self._on_start(); return

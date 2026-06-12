@@ -73,6 +73,35 @@ class TaggingStateTests(unittest.TestCase):
         self.assertIsNone(s.current_filename())
         self.assertFalse(s.assign("BEP"))
 
+    def test_rotation_defaults_to_zero(self):
+        s = TaggingState(["a.jpg"])
+        self.assertEqual(s.rotation_of("a.jpg"), 0)
+
+    def test_rotate_right_and_left_wrap(self):
+        s = TaggingState(["a.jpg"])
+        s.rotate_right()
+        self.assertEqual(s.rotation_of("a.jpg"), 90)
+        s.rotate_right()
+        s.rotate_right()
+        s.rotate_right()
+        self.assertEqual(s.rotation_of("a.jpg"), 0)   # 4x90 wraps
+        s.rotate_left()
+        self.assertEqual(s.rotation_of("a.jpg"), 270)
+
+    def test_rotation_is_per_image(self):
+        s = TaggingState(["a.jpg", "b.jpg"])
+        s.rotate_right()                 # rotates a.jpg
+        s.goto(1)
+        s.rotate_left()                  # rotates b.jpg
+        self.assertEqual(s.rotation_of("a.jpg"), 90)
+        self.assertEqual(s.rotation_of("b.jpg"), 270)
+
+    def test_rotate_noop_on_empty(self):
+        s = TaggingState([])
+        s.rotate_right()                 # no current image -> no error
+        s.rotate_left()
+        self.assertEqual(s.rotation_of("x.jpg"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
