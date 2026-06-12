@@ -3,6 +3,8 @@ import os
 import re
 import time
 
+from departments import VALID_DEPARTMENTS
+
 
 def _should_keep_processing(stop_event):
     return not (stop_event and stop_event.is_set())
@@ -29,6 +31,89 @@ def _should_use_direct_vision_fallback(validation_report):
 
 def _should_use_vision_after_light_fallback(validation_report):
     return _missing_vision_critical_fields(validation_report)
+
+
+# --- Weak-result escalation (handwriting / garbled / total mismatch) ---
+WEAK_HANDWRITTEN_CONF = 0.90
+WEAK_ANY_CONF = 0.80
+GARBLED_NAME_RATIO = 0.30
+
+_VOWELS = set(
+    "aeiouy"
+    "àáảãạăằắẳẵặâầấẩẫậ"
+    "èéẻẽẹêềếểễệ"
+    "ìíỉĩị"
+    "òóỏõọôồốổỗộơờớởỡợ"
+    "ùúủũụưừứửữự"
+    "ỳýỷỹỵ"
+)
+
+
+def _is_garbled_name(name):
+    raw = str(name or "").strip()
+    if not raw:
+        return True
+    if any(ch in raw for ch in ("'", '"', "`", "\\")):
+        return True
+    if re.match(r"^\d", raw):                 # item names virtually never start with a digit
+        return True
+    alpha = re.sub(r"[^a-zà-ỹ]", "", raw.lower())
+    if len(alpha) <= 2:                       # essentially no readable word left
+        return True
+    if not any(ch in _VOWELS for ch in alpha):   # vowel-less gibberish
+        return True
+    return False
+
+
+def _garbled_name_ratio(invoice_json):
+    items = invoice_json.get("items") or []
+    if not items:
+        return 0.0
+    garbled = sum(1 for it in items if _is_garbled_name(it.get("product_name")))
+    return garbled / len(items)
+
+
+def _has_total_mismatch(invoice_json):
+    totals = invoice_json.get("totals") or {}
+    return bool(str(totals.get("total_discrepancy_warning") or "").strip())
+
+
+def _looks_handwritten(invoice_json):
+    doc = invoice_json.get("document_info") or {}
+    itype = str(doc.get("invoice_type") or "").upper()
+    if "HANDWRITTEN" in itype or "RETAIL" in itype:
+        return True
+    txn = invoice_json.get("transaction_info") or {}
+    no_number = not str(txn.get("invoice_number") or "").strip()
+    no_date = not str(txn.get("invoice_date") or "").strip()
+    return no_number and no_date
+
+
+def _should_escalate_weak_result(invoice_json, validation_report):
+    if _has_total_mismatch(invoice_json):
+        return True
+    if _garbled_name_ratio(invoice_json) >= GARBLED_NAME_RATIO:
+        return True
+    conf = _validation_confidence(validation_report)
+    if _looks_handwritten(invoice_json) and conf < WEAK_HANDWRITTEN_CONF:
+        return True
+    if conf < WEAK_ANY_CONF:
+        return True
+    return False
+
+
+def _apply_department_override(invoice_json, dept):
+    """Authoritatively set the user-tagged department on the invoice JSON.
+
+    No-op when dept is not one of the 4 valid codes. Safe to call repeatedly
+    and on a fresh JSON returned by a fallback."""
+    dept = str(dept or "").strip().upper()
+    if dept not in VALID_DEPARTMENTS:
+        return invoice_json
+    txn = invoice_json.setdefault("transaction_info", {})
+    txn["department"] = dept
+    invoice_json["_department_source"] = "user_tag"
+    return invoice_json
 
 
 def _has_reviewable_invoice_data(invoice_json):
@@ -166,7 +251,7 @@ def _run_supplier_evidence_rescue(
     return _attach_local_evidence_report(invoice_json, rescue_report)
 
 
-def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_callback, stage, validation_report):
+def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_callback, stage, validation_report, department_hint=None):
     from module_pro_ocr import get_pro_ocr
     from supplier_enrichment import enrich_supplier
 
@@ -175,6 +260,7 @@ def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_call
         image,
         stop_event=stop_event,
         status_callback=status_callback,
+        department_hint=department_hint,
     )
     result = enrich_supplier(result, data_store)
     result.setdefault("_structure_pipeline", {})
@@ -187,13 +273,12 @@ def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_call
     return result
 
 
-def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
+def run_pipeline(input_dir: str, stop_event, api_key: str, signals, dept_map=None) -> str:
     def _log(msg):
         signals.log.emit(msg)
 
     output_path = ""
     root_dir = input_dir.rstrip(os.sep).rstrip("/")
-    done_dir = os.path.join(os.path.dirname(root_dir), "DONE")
 
     valid_ext = (".png", ".jpg", ".jpeg")
     files = [f for f in os.listdir(root_dir) if f.lower().endswith(valid_ext)]
@@ -203,8 +288,12 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
         signals.status_txt.emit("Khong co anh!", "error")
         return output_path
 
+    # Each run gets its own timestamped folder under OUTPUT/ (JSON + images + Excel).
+    from output_paths import create_run_output_dir
+    done_dir = create_run_output_dir()
     os.makedirs(done_dir, exist_ok=True)
     _log(f"Thu muc dau vao: {root_dir}")
+    _log(f"Thu muc ket qua: {done_dir}")
     _log(f"PP-StructureV3 mac dinh: phat hien {len(files)} anh cho xu ly.")
 
     total = len(files)
@@ -219,6 +308,10 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
         dest_img_path = os.path.join(done_dir, filename)
         dest_json = os.path.join(done_dir, stem + ".json")
         processed_ok = False
+
+        dept = (dept_map or {}).get(filename)
+        if dept_map is not None and not dept:
+            _log(f"Bo phan chua gan cho {filename} -- dung suy luan tu dong.")
 
         _log(f"[{i}/{total}] Dang chay PP-StructureV3: {filename}")
         signals.progress.emit(i - 1, total)
@@ -257,6 +350,7 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                 kie_result=kie_result,
                 confidence_score=normalized.get("avg_confidence", 0.0),
             )
+            json_rough = _apply_department_override(json_rough, dept)
             json_rough = enrich_supplier(json_rough, app_data)
             json_rough = _run_supplier_evidence_rescue(
                 json_rough,
@@ -279,7 +373,9 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     _log,
                     "direct_after_structure",
                     validation,
+                    department_hint=dept,
                 )
+                json_rough = _apply_department_override(json_rough, dept)
             elif should_use_light_fallback(validation):
                 _log("Ket qua local con yeu -> dung model nhe lam fallback.")
                 json_rough = run_light_fallback(
@@ -289,7 +385,9 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     app_data,
                     stop_event=stop_event,
                     status_callback=_log,
+                    department_hint=dept,
                 )
+                json_rough = _apply_department_override(json_rough, dept)
                 light_supplier_suspicious = _supplier_looks_suspicious_after_light_fallback(json_rough, validation)
                 json_rough = enrich_supplier(json_rough, app_data)
                 json_rough = _run_supplier_evidence_rescue(
@@ -315,13 +413,31 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                         _log,
                         "after_light_fallback",
                         light_validation,
+                        department_hint=dept,
                     )
+                    json_rough = _apply_department_override(json_rough, dept)
                     json_rough["_structure_pipeline"]["light_fallback_used"] = True
                     json_rough["_structure_pipeline"]["validation_before_light_fallback"] = validation
                 elif light_supplier_suspicious:
                     _log("Fallback nhe co NCC dang nghi tu dong NVBH/HRC -> bo qua neu khong co bang chung local.")
             else:
                 _log("Ket qua local du manh -> khong can fallback model nhe.")
+
+            already_pro = json_rough.get("_structure_pipeline", {}).get("pro_vision_fallback_used")
+            val_now = json_rough.get("_structure_pipeline", {}).get("validation", validation)
+            if not already_pro and _should_escalate_weak_result(json_rough, val_now):
+                _log("Tin hieu yeu / chu viet tay -> nang cap Pro Vision.")
+                json_rough = _run_pro_vision_fallback(
+                    image,
+                    api_key,
+                    app_data,
+                    stop_event,
+                    _log,
+                    "weak_signal_escalation",
+                    val_now,
+                    department_hint=dept,
+                )
+                json_rough = _apply_department_override(json_rough, dept)
 
             calc_engine = get_calculator(api_key, app_data)
             invoice_json = calc_engine.run_calculation(
@@ -337,10 +453,17 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
             invoice_json.setdefault("_structure_pipeline", {})
             invoice_json["_structure_pipeline"].update(json_rough.get("_structure_pipeline", {}))
 
+            invoice_json["_source_filename"] = filename
+            # Carry supplier/evidence trace forward so the saved route is complete,
+            # then stamp which actual pipeline path produced this result.
+            for _trace_key in ("_supplier_resolution", "_local_evidence_rescue"):
+                if _trace_key in json_rough and _trace_key not in invoice_json:
+                    invoice_json[_trace_key] = json_rough[_trace_key]
+            from pipeline_trace import build_route
+            invoice_json["_processing_route"] = build_route(invoice_json, "structure_default")
             with open(dest_json, "w", encoding="utf-8") as jf:
                 json.dump(invoice_json, jf, ensure_ascii=False, indent=2)
 
-            invoice_json["_source_filename"] = filename
             all_results.append(invoice_json)
             confidence = invoice_json.get("document_info", {}).get("confidence_score", 1.0)
             supplier = invoice_json.get("supplier_info", {}).get("supplier_name_code", "?")

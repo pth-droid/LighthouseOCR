@@ -45,17 +45,19 @@ class ProVisionOCR:
         except Exception as e:
             raise RuntimeError(f"Engine failed to build Pro Vision Prompts: {e}")
 
-    def extract_image_directly(self, image: Image.Image, stop_event=None, status_callback=None) -> dict:
+    def extract_image_directly(self, image: Image.Image, stop_event=None, status_callback=None, department_hint: str = None) -> dict:
         if status_callback:
             status_callback("🧠 Nét mờ/Tay: Kích hoạt LLM Flash 3.1 Vision càn quét bức ảnh...")
-            
+
+        from departments import department_prompt_line
+
         models_to_try = [
-            {"name": self.data_store.models.get("pro_primary"), "label": "Gemini 3.5 Flash Vision", "is_primary": True},
-            {"name": self.data_store.models.get("pro_fallback"), "label": "Gemini 3.1 Pro Preview Vision Fallback", "is_primary": False}
+            {"name": self.data_store.models.get("pro_primary"), "label": "Gemini 2.5 Flash Vision", "is_primary": True},
+            {"name": self.data_store.models.get("pro_fallback"), "label": "Gemini 2.5 Pro Vision Fallback", "is_primary": False}
         ]
         raw_text, model_name, usage_meta = generate_with_fallback(
             self.client, models_to_try,
-            contents_fn=lambda _: [self.prompt_template, image],
+            contents_fn=lambda _: [f"{department_prompt_line(department_hint)}{self.prompt_template}", image],
             data_store=self.data_store,
             rate_bucket_fn=lambda name: "pro" if "pro" in name.lower() else "flash",
             base_wait_fn=lambda bk: 35 if bk == "pro" else 15,
