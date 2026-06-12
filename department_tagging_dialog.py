@@ -73,3 +73,182 @@ class TaggingState:
 
     def get_department_map(self):
         return dict(self.assignments)
+
+
+# --- Qt view (guarded so TaggingState stays importable without PyQt5) ---
+try:
+    import os
+
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import (
+        QDialog, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QListWidget,
+        QListWidgetItem, QWidget, QMessageBox, QSizePolicy,
+    )
+
+    _QT_AVAILABLE = True
+except Exception:
+    _QT_AVAILABLE = False
+
+
+if _QT_AVAILABLE:
+    _DEPT_HOTKEYS = {
+        Qt.Key_1: "BEP", Qt.Key_2: "BAR", Qt.Key_3: "BANH", Qt.Key_4: "RANG",
+    }
+
+    class DepartmentTaggingDialog(QDialog):
+        """Tag each invoice image to a department before scanning.
+
+        image_paths: absolute paths (order is cosmetic; the returned map is keyed
+        by basename to line up with how the pipeline iterates os.listdir).
+        store_name: label shown at top (forward-compat seam for multi-store).
+        """
+
+        def __init__(self, image_paths, store_name="Lighthouse", parent=None):
+            super().__init__(parent)
+            self._paths_by_name = {os.path.basename(p): p for p in image_paths}
+            self.state = TaggingState([os.path.basename(p) for p in image_paths])
+            self.setWindowTitle("Gán bộ phận cho hoá đơn")
+            self.resize(1100, 760)
+            self._build_ui(store_name)
+            self._refresh()
+
+        # ---- UI construction ----
+        def _build_ui(self, store_name):
+            root = QHBoxLayout(self)
+
+            left = QVBoxLayout()
+            self.lbl_store = QLabel(f"Cửa hàng: {store_name}")
+            self.lbl_store.setStyleSheet("font-weight:600;")
+            left.addWidget(self.lbl_store)
+
+            self.lbl_progress = QLabel()
+            left.addWidget(self.lbl_progress)
+
+            self._dept_buttons = {}
+            for key, dept in _DEPT_HOTKEYS.items():
+                label = key - Qt.Key_0
+                btn = QPushButton(f"[{label}]  {dept}")
+                btn.setMinimumHeight(48)
+                btn.clicked.connect(lambda _=False, d=dept: self._assign(d))
+                left.addWidget(btn)
+                self._dept_buttons[dept] = btn
+
+            self.list_files = QListWidget()
+            self.list_files.currentRowChanged.connect(self._on_row_changed)
+            left.addWidget(self.list_files, 1)
+
+            self.btn_start = QPushButton("✅ Bắt đầu xử lý")
+            self.btn_start.clicked.connect(self._on_start)
+            left.addWidget(self.btn_start)
+
+            left_w = QWidget()
+            left_w.setLayout(left)
+            left_w.setFixedWidth(360)
+            root.addWidget(left_w)
+
+            right = QVBoxLayout()
+            self.lbl_header = QLabel()
+            self.lbl_header.setStyleSheet("font-weight:600;")
+            right.addWidget(self.lbl_header)
+            self.lbl_image = QLabel("(không có ảnh)")
+            self.lbl_image.setAlignment(Qt.AlignCenter)
+            self.lbl_image.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+            right.addWidget(self.lbl_image, 1)
+            root.addLayout(right, 1)
+
+            for name in self.state.filenames:
+                self.list_files.addItem(QListWidgetItem(name))
+
+        # ---- actions ----
+        def _assign(self, dept):
+            self.state.assign(dept)
+            self._refresh()
+
+        def _on_row_changed(self, row):
+            if row >= 0 and row != self.state.current_index:
+                self.state.goto(row)
+                self._refresh()
+
+        def _sync_list_selection(self):
+            self.list_files.blockSignals(True)
+            self.list_files.setCurrentRow(self.state.current_index)
+            self.list_files.blockSignals(False)
+
+        def _on_start(self):
+            if self.state.is_complete():
+                self.accept()
+
+        # ---- rendering ----
+        def _refresh(self):
+            self._sync_list_selection()
+            total = self.state.total
+            idx = self.state.current_index
+            name = self.state.current_filename() or ""
+            self.lbl_header.setText(f"Ảnh {idx + 1} / {total} — {name}")
+            self.lbl_progress.setText(
+                f"Đã gán: {self.state.assigned_count()} / {total}"
+            )
+            for i, fn in enumerate(self.state.filenames):
+                dept = self.state.department_of(fn)
+                self.list_files.item(i).setText(f"{fn}   [{dept or '—'}]")
+            cur_dept = self.state.department_of(name)
+            for dept, btn in self._dept_buttons.items():
+                btn.setStyleSheet(
+                    "background:#2f6fb0; color:white; font-weight:700;"
+                    if dept == cur_dept else ""
+                )
+            self.btn_start.setEnabled(self.state.is_complete())
+            self._render_image(name)
+
+        def _render_image(self, name):
+            path = self._paths_by_name.get(name)
+            if not path or not os.path.exists(path):
+                self.lbl_image.setText("Không tải được ảnh")
+                return
+            from post_process_dialog import _load_invoice_pixmap
+            pix = _load_invoice_pixmap(path)
+            if pix.isNull():
+                self.lbl_image.setText("Không tải được ảnh")
+                return
+            target_w = max(200, self.lbl_image.width())
+            self.lbl_image.setPixmap(pix.scaledToWidth(target_w, Qt.SmoothTransformation))
+
+        def showEvent(self, event):
+            super().showEvent(event)
+            self._render_image(self.state.current_filename() or "")
+
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            self._render_image(self.state.current_filename() or "")
+
+        # ---- keys ----
+        def keyPressEvent(self, event):
+            key = event.key()
+            if key in _DEPT_HOTKEYS:
+                self._assign(_DEPT_HOTKEYS[key]); return
+            if key in (Qt.Key_Backspace, Qt.Key_Left):
+                self.state.back(); self._refresh(); return
+            if key == Qt.Key_Right:
+                self.state.forward(); self._refresh(); return
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                self._on_start(); return
+            if key == Qt.Key_Escape:
+                self._confirm_cancel(); return
+            super().keyPressEvent(event)
+
+        def closeEvent(self, event):
+            # Treat the window [X] like Esc: confirm, then abort the scan.
+            event.ignore()
+            self._confirm_cancel()
+
+        def _confirm_cancel(self):
+            resp = QMessageBox.question(
+                self, "Hủy phiên scan",
+                "Hủy toàn bộ phiên scan? Chưa gán đủ bộ phận nên sẽ không xử lý ảnh nào.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if resp == QMessageBox.Yes:
+                self.reject()
+
+        def get_department_map(self):
+            return self.state.get_department_map()
