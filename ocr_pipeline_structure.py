@@ -251,7 +251,7 @@ def _run_supplier_evidence_rescue(
     return _attach_local_evidence_report(invoice_json, rescue_report)
 
 
-def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_callback, stage, validation_report):
+def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_callback, stage, validation_report, department_hint=None):
     from module_pro_ocr import get_pro_ocr
     from supplier_enrichment import enrich_supplier
 
@@ -260,6 +260,7 @@ def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_call
         image,
         stop_event=stop_event,
         status_callback=status_callback,
+        department_hint=department_hint,
     )
     result = enrich_supplier(result, data_store)
     result.setdefault("_structure_pipeline", {})

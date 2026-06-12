@@ -24,7 +24,7 @@ def build_light_fallback_text(normalized_structure):
     )
 
 
-def run_light_fallback(normalized_structure, avg_confidence, api_key, data_store, stop_event=None, status_callback=None):
+def run_light_fallback(normalized_structure, avg_confidence, api_key, data_store, stop_event=None, status_callback=None, department_hint=None):
     from module_flash_ocr import get_flash_structurer
 
     fallback_text = build_light_fallback_text(normalized_structure)
@@ -34,6 +34,7 @@ def run_light_fallback(normalized_structure, avg_confidence, api_key, data_store
         avg_confidence,
         stop_event=stop_event,
         status_callback=status_callback,
+        department_hint=department_hint,
     )
     result.setdefault("_structure_pipeline", {})
     result["_structure_pipeline"]["fallback_used"] = True

@@ -45,11 +45,13 @@ class FlashTextStructurer:
         except Exception as e:
             raise RuntimeError(f"Engine failed to build Flash Text Prompts: {e}")
 
-    def structure_text_to_json(self, raw_paddle_text: str, avg_confidence: float, stop_event=None, status_callback=None) -> dict:
+    def structure_text_to_json(self, raw_paddle_text: str, avg_confidence: float, stop_event=None, status_callback=None, department_hint: str = None) -> dict:
         if status_callback:
             status_callback("🚀 Gửi dữ liệu thô đẩy lên hạ tầng LLM Flash 3.1 cấu trúc thành JSON...")
-            
-        combined_prompt = f"{self.prompt_template}\n\nRAW_TEXT_INPUT_FROM_PADDLEOCR:\n{raw_paddle_text}"
+
+        from departments import department_prompt_line
+        dept_ctx = department_prompt_line(department_hint)
+        combined_prompt = f"{dept_ctx}{self.prompt_template}\n\nRAW_TEXT_INPUT_FROM_PADDLEOCR:\n{raw_paddle_text}"
 
         models_to_try = [
             {"name": self.data_store.models.get("light_primary"), "label": "Gemini 3.1 Flash-Lite", "is_primary": True},
