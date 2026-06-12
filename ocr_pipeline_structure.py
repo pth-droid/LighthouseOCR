@@ -273,7 +273,7 @@ def _run_pro_vision_fallback(image, api_key, data_store, stop_event, status_call
     return result
 
 
-def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
+def run_pipeline(input_dir: str, stop_event, api_key: str, signals, dept_map=None) -> str:
     def _log(msg):
         signals.log.emit(msg)
 
@@ -308,6 +308,10 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
         dest_img_path = os.path.join(done_dir, filename)
         dest_json = os.path.join(done_dir, stem + ".json")
         processed_ok = False
+
+        dept = (dept_map or {}).get(filename)
+        if dept_map is not None and not dept:
+            _log(f"Bo phan chua gan cho {filename} -- dung suy luan tu dong.")
 
         _log(f"[{i}/{total}] Dang chay PP-StructureV3: {filename}")
         signals.progress.emit(i - 1, total)
@@ -346,6 +350,7 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                 kie_result=kie_result,
                 confidence_score=normalized.get("avg_confidence", 0.0),
             )
+            json_rough = _apply_department_override(json_rough, dept)
             json_rough = enrich_supplier(json_rough, app_data)
             json_rough = _run_supplier_evidence_rescue(
                 json_rough,
@@ -368,7 +373,9 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     _log,
                     "direct_after_structure",
                     validation,
+                    department_hint=dept,
                 )
+                json_rough = _apply_department_override(json_rough, dept)
             elif should_use_light_fallback(validation):
                 _log("Ket qua local con yeu -> dung model nhe lam fallback.")
                 json_rough = run_light_fallback(
@@ -378,7 +385,9 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                     app_data,
                     stop_event=stop_event,
                     status_callback=_log,
+                    department_hint=dept,
                 )
+                json_rough = _apply_department_override(json_rough, dept)
                 light_supplier_suspicious = _supplier_looks_suspicious_after_light_fallback(json_rough, validation)
                 json_rough = enrich_supplier(json_rough, app_data)
                 json_rough = _run_supplier_evidence_rescue(
@@ -404,13 +413,31 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals) -> str:
                         _log,
                         "after_light_fallback",
                         light_validation,
+                        department_hint=dept,
                     )
+                    json_rough = _apply_department_override(json_rough, dept)
                     json_rough["_structure_pipeline"]["light_fallback_used"] = True
                     json_rough["_structure_pipeline"]["validation_before_light_fallback"] = validation
                 elif light_supplier_suspicious:
                     _log("Fallback nhe co NCC dang nghi tu dong NVBH/HRC -> bo qua neu khong co bang chung local.")
             else:
                 _log("Ket qua local du manh -> khong can fallback model nhe.")
+
+            already_pro = json_rough.get("_structure_pipeline", {}).get("pro_vision_fallback_used")
+            val_now = json_rough.get("_structure_pipeline", {}).get("validation", validation)
+            if not already_pro and _should_escalate_weak_result(json_rough, val_now):
+                _log("Tin hieu yeu / chu viet tay -> nang cap Pro Vision.")
+                json_rough = _run_pro_vision_fallback(
+                    image,
+                    api_key,
+                    app_data,
+                    stop_event,
+                    _log,
+                    "weak_signal_escalation",
+                    val_now,
+                    department_hint=dept,
+                )
+                json_rough = _apply_department_override(json_rough, dept)
 
             calc_engine = get_calculator(api_key, app_data)
             invoice_json = calc_engine.run_calculation(
