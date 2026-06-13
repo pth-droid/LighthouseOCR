@@ -5,6 +5,7 @@ from ocr_pipeline_structure import (
     _garbled_name_ratio,
     _has_total_mismatch,
     _looks_handwritten,
+    _should_escalate_after_calc,
     _should_escalate_weak_result,
 )
 
@@ -70,6 +71,28 @@ class EscalationPredicateTests(unittest.TestCase):
                         "Khoai tây Hychoice AAA XLF straight cut 1kg"],
                        invoice_type="VAT_INVOICE", number="DO-1", date="2026-05-23")
         self.assertFalse(_should_escalate_weak_result(printed, {"confidence": 0.881}))
+
+
+class EscalateAfterCalcTests(unittest.TestCase):
+    def _post_calc(self, warning=None, already_pro=False):
+        j = {"items": [{}], "totals": {}, "_structure_pipeline": {}}
+        if warning:
+            j["totals"]["total_discrepancy_warning"] = warning
+        if already_pro:
+            j["_structure_pipeline"]["pro_vision_fallback_used"] = True
+        return j
+
+    def test_escalates_on_total_mismatch(self):
+        self.assertTrue(_should_escalate_after_calc(self._post_calc(warning="[CẢNH BÁO]")))
+
+    def test_no_escalation_without_mismatch(self):
+        self.assertFalse(_should_escalate_after_calc(self._post_calc()))
+
+    def test_no_re_escalation_when_already_pro_vision(self):
+        # Handwritten invoices already went to Pro Vision — don't loop.
+        self.assertFalse(
+            _should_escalate_after_calc(self._post_calc(warning="[CẢNH BÁO]", already_pro=True))
+        )
 
 
 if __name__ == "__main__":

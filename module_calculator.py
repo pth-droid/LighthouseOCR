@@ -40,6 +40,55 @@ def _to_float(value, default=0.0):
         return default
 
 
+# Standard Vietnamese VAT rates. A per-line VAT amount that, divided by its
+# pre-VAT base, lands within VAT_SNAP_TOLERANCE of one of these is trusted as
+# that rate (and overrides the LLM's guessed label). One that lands nowhere near
+# a standard rate signals a misread amount.
+STANDARD_VAT_RATES = (0.0, 5.0, 8.0, 10.0)
+VAT_SNAP_TOLERANCE = 0.5  # percentage points
+
+
+def _snap_vat_rate(rate) -> float | None:
+    try:
+        rate = float(rate)
+    except (TypeError, ValueError):
+        return None
+    best = min(STANDARD_VAT_RATES, key=lambda std: abs(rate - std))
+    if abs(rate - best) <= VAT_SNAP_TOLERANCE:
+        return best
+    return None
+
+
+def _reconcile_totals(grand_total, declared_total, has_vat, vat_inconsistent_count) -> str | None:
+    """Return a CẢNH BÁO string when the computed totals cannot be trusted, else None.
+
+    Two independent signals:
+    - VAT inconsistency (robust): a line carries a VAT amount whose effective
+      rate is not a standard rate — a misread amount. Does not depend on the
+      printed grand total being read correctly.
+    - Total divergence: the computed grand total drifts from the invoice's
+      printed total. VAT-bearing invoices are held to 1% (a single missed VAT
+      line is ~1–8% of total); others keep the legacy 5% tolerance for seller
+      hand-rounding. The absolute floor avoids flagging tiny slips.
+    """
+    if vat_inconsistent_count > 0:
+        return (
+            f"[CẢNH BÁO: {vat_inconsistent_count} dòng có tiền VAT không khớp "
+            "mức thuế suất chuẩn (5/8/10%) — số tiền VAT nghi đọc sai. "
+            "Kiểm tra lại phiếu gốc.]"
+        )
+    if declared_total > 0 and grand_total > 0:
+        divergence = abs(grand_total - declared_total) / declared_total
+        abs_diff = abs(grand_total - declared_total)
+        tol = 0.01 if has_vat else 0.05
+        if divergence > tol and abs_diff > 5000:
+            return (
+                f"[CẢNH BÁO: Tổng tính được ({int(grand_total):,}) lệch {divergence:.1%} "
+                f"so với tổng trên phiếu ({int(declared_total):,}). Kiểm tra lại phiếu gốc.]"
+            )
+    return None
+
+
 def _parse_percent(text) -> float | None:
     if not text:
         return None
@@ -273,6 +322,7 @@ def _normalize_pricing_basis(raw_json_obj: dict, calc_result: dict) -> dict:
     shipping_total = 0.0
     net_total_before_vat = 0.0
     grand_total = 0.0
+    vat_inconsistent_count = 0
 
     for idx, raw_item in enumerate(raw_items):
         result_item = result_items[idx] if idx < len(result_items) else {}
@@ -302,6 +352,22 @@ def _normalize_pricing_basis(raw_json_obj: dict, calc_result: dict) -> dict:
             line_vat_amount = round(discounted_total * vat_rate / 100.0, 0)
         else:
             line_vat_amount = 0.0
+
+        # Trust the arithmetic over the LLM's guessed rate label. When a VAT
+        # amount is present, derive the effective rate and snap it to a standard
+        # rate: a rate that snaps replaces the (often wrong) label; a rate that
+        # snaps to nothing means the amount was lifted from the wrong cell, so we
+        # flag the line for total reconciliation / Pro Vision escalation.
+        line_vat_inconsistent = False
+        if line_vat_amount > 0 and discounted_total > 0:
+            derived_rate = line_vat_amount / discounted_total * 100.0
+            snapped_rate = _snap_vat_rate(derived_rate)
+            if snapped_rate is not None:
+                vat_rate = snapped_rate
+            else:
+                line_vat_inconsistent = True
+                vat_rate = round(derived_rate, 2)
+                vat_inconsistent_count += 1
 
         payable_total = discounted_total + line_vat_amount + line_shipping_amount
         per_unit_discount = (line_discount_amount / qty) if qty > 0 else 0.0
@@ -339,6 +405,8 @@ def _normalize_pricing_basis(raw_json_obj: dict, calc_result: dict) -> dict:
             "base_pricing_note": formula_text,
             "notes": notes,
         })
+        if line_vat_inconsistent:
+            merged_item["_vat_inconsistent"] = True
         normalized_items.append(merged_item)
 
         vat_total += line_vat_amount
@@ -362,19 +430,19 @@ def _normalize_pricing_basis(raw_json_obj: dict, calc_result: dict) -> dict:
     if totals_out.get("vat_percentage") in (None, "", 0):
         totals_out["vat_percentage"] = totals_raw.get("vat_percentage", 0)
 
-    # FIX-4 (Case 7B): Phát hiện tổng phiếu tay lệch tổng tính được
+    # Total reconciliation: VAT-aware divergence + non-standard per-line VAT rate.
+    # (Supersedes the former FIX-4 5%-only handwritten-total check; the 5%
+    # tolerance is preserved for non-VAT invoices.)
     raw_total_amount = _to_float(totals_raw.get("total_amount"), 0.0)
-    if raw_total_amount > 0 and grand_total > 0:
-        divergence = abs(grand_total - raw_total_amount) / raw_total_amount
-        if divergence > 0.05:  # Lệch > 5%
-            totals_out["total_discrepancy_warning"] = (
-                f"[CẢNH BÁO: Tổng phiếu tay ({int(raw_total_amount):,}) lệch {divergence:.1%} "
-                f"so với tổng tính được ({int(grand_total):,}). Kiểm tra lại phiếu gốc.]"
-            )
-            logging.warning(
-                f"[Calculator] FIX-4: Total divergence {divergence:.1%} — "
-                f"invoice total={int(raw_total_amount)}, computed={int(grand_total)}"
-            )
+    reconciliation_warning = _reconcile_totals(
+        grand_total,
+        raw_total_amount,
+        has_vat=vat_total > 0,
+        vat_inconsistent_count=vat_inconsistent_count,
+    )
+    if reconciliation_warning:
+        totals_out["total_discrepancy_warning"] = reconciliation_warning
+        logging.warning(f"[Calculator] Total reconciliation: {reconciliation_warning}")
 
     calc_result["totals"] = totals_out
 

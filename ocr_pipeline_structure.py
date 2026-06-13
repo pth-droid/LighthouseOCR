@@ -102,6 +102,17 @@ def _should_escalate_weak_result(invoice_json, validation_report):
     return False
 
 
+def _should_escalate_after_calc(invoice_json):
+    """Escalate to Pro Vision after calculation when the calculator flagged a
+    total/VAT reconciliation failure, unless Pro Vision already ran (no loops).
+
+    This is the post-calc counterpart to ``_should_escalate_weak_result``: the
+    ``total_discrepancy_warning`` it keys on is only produced *inside* the
+    calculator, so it cannot be seen by the pre-calc gate."""
+    already_pro = (invoice_json.get("_structure_pipeline") or {}).get("pro_vision_fallback_used")
+    return not already_pro and _has_total_mismatch(invoice_json)
+
+
 def _apply_department_override(invoice_json, dept):
     """Authoritatively set the user-tagged department on the invoice JSON.
 
@@ -445,6 +456,31 @@ def run_pipeline(input_dir: str, stop_event, api_key: str, signals, dept_map=Non
                 stop_event=stop_event,
                 status_callback=_log,
             )
+
+            # The calculator only now (post-calc) sets total_discrepancy_warning
+            # when VAT/total doesn't reconcile (e.g. a light fallback that misread
+            # a multi-column VAT layout). Re-read the image with Pro Vision once
+            # and recompute; if it still doesn't reconcile, the warning persists
+            # for manual review.
+            if _should_keep_processing(stop_event) and _should_escalate_after_calc(invoice_json):
+                _log("Tong/VAT khong khop sau khi tinh -> nang cap Pro Vision doc lai.")
+                json_rough = _run_pro_vision_fallback(
+                    image,
+                    api_key,
+                    app_data,
+                    stop_event,
+                    _log,
+                    "total_reconciliation",
+                    val_now,
+                    department_hint=dept,
+                )
+                json_rough = _apply_department_override(json_rough, dept)
+                invoice_json = calc_engine.run_calculation(
+                    json_rough,
+                    stop_event=stop_event,
+                    status_callback=_log,
+                )
+
             if not _has_reviewable_invoice_data(invoice_json):
                 raise RuntimeError(
                     "Khong trich xuat duoc dong hang nao sau tat ca fallback; "
